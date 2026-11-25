@@ -129,7 +129,7 @@ textarea.big{width:100%;min-height:150px;resize:vertical;margin-top:10px;line-he
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
 .hint{color:var(--muted);font-size:.8rem}
 .prop{margin-top:14px;border-top:1px solid #ffffff14;padding-top:12px}
-.prow{display:grid;grid-template-columns:22px 92px 150px 1fr;gap:8px;align-items:center;padding:4px 0}
+.prow{display:grid;grid-template-columns:22px 128px 150px 1fr;gap:8px;align-items:center;padding:4px 0}
 .prow input[type=text],.prow select{background:#00000033;border:1px solid #ffffff1c;border-radius:7px;padding:4px 8px;font-size:.88rem;min-width:0}
 .kind{font-size:.75rem;font-weight:700;border-radius:6px;padding:2px 6px;text-align:center}
 .kind.complete{background:#57d39a22;color:var(--ok)}
@@ -243,6 +243,26 @@ textarea.big{width:100%;min-height:150px;resize:vertical;margin-top:10px;line-he
   .s-gallery figure{border-width:2px;border-radius:10px}
   .s-gallery figcaption{font-size:11px;padding:14px 6px 4px}
 }
+.kind-sel{font-size:.75rem;font-weight:700;border-radius:6px;padding:3px 4px;border:0;min-width:0;cursor:pointer}
+.kind-sel.new_done{background:#4fb8d022;color:var(--glow)}
+.kind-sel.new_todo{background:var(--orange-soft);color:#ffb37f}
+.kind-sel option{background:var(--panel);color:var(--text)}
+.note{color:var(--muted);font-size:.83rem;white-space:pre-wrap;margin-top:2px;overflow-wrap:anywhere}
+.editbox{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.editbox input,.editbox textarea,.editbox select{background:#00000033;border:1px solid #ffffff22;border-radius:8px;padding:6px 9px;color:var(--text);font-size:.92rem;width:100%;min-width:0}
+.editbox textarea{min-height:70px;resize:vertical;line-height:1.5}
+.editbox label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted)}
+.editrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.editbtns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.btn.sm{padding:4px 12px;font-size:.84rem;border-radius:8px}
+.btn.danger{border-color:#ff7a7a66;color:var(--danger)}
+.icon{background:none;border:0;color:#ffffff55;padding:0 4px;font-size:.95rem;line-height:1.4}
+.icon:hover{color:var(--glow)}
+.icon.arm{color:var(--danger);font-size:.75rem;font-weight:700}
+.log .meta{align-items:center}
+.log .meta .grow{flex:1}
+.sumedit .team-ed{border-top:1px solid #ffffff14;padding-top:10px;margin-top:4px}
+.sumedit h4{margin:0 0 6px;color:var(--orange);font-family:var(--f-display);font-size:1rem}
 .install{border:1.5px solid var(--glow);color:var(--glow);background:none;border-radius:999px;padding:3px 12px;font-size:.8rem;font-weight:700;white-space:nowrap}
 .ioshint{display:flex;gap:10px;align-items:center;justify-content:space-between}
 .ioshint button{background:none;border:0;color:var(--muted);font-size:1.1rem}
@@ -300,10 +320,12 @@ textarea.big{width:100%;min-height:150px;resize:vertical;margin-top:10px;line-he
     <div class="deck-actions">
       <button class="btn primary" id="genSummary">הפק סיכום שבוע עם Gemini</button>
       <button class="btn" id="copySummary">העתק כטקסט לוואטסאפ</button>
+      <button class="btn" id="editSummary">✏️ ערוך סיכום</button>
       <button class="btn ghost" id="carryOver"></button>
       <span class="aitag" id="genInfo"></span>
     </div>
     <div id="copyBox"></div>
+    <div id="sumEdit"></div>
     <div class="deck" id="deck"></div>
   </section>
 </div>
@@ -391,11 +413,11 @@ const okImg=x=>typeof x==="string"&&/^[\w-]{10,200}$/.test(x);
 function parseImgs(v){if(Array.isArray(v))return v.filter(okImg);if(typeof v==="string"&&v.trim().startsWith("[")){try{const a=JSON.parse(v);return Array.isArray(a)?a.filter(okImg):[]}catch(e){}}return[]}
 const imgUrl=(id,w)=>"https://drive.google.com/thumbnail?id="+encodeURIComponent(id)+"&sz=w"+(w||1600);
 function normTask(r){return{id:String(r.id),week:Number(r.week),team:String(r.team||""),title:String(r.title??""),done:toBool(r.done),source:String(r.source||"manual"),
-  addedOn:isIso(r.addedOn)?r.addedOn:null,doneOn:isIso(r.doneOn)?r.doneOn:null,carried:toBool(r.carried),carriedFrom:r.carriedFrom?String(r.carriedFrom):"",createdAt:Number(r.createdAt)||0,images:parseImgs(r.images)}}
+  addedOn:isIso(r.addedOn)?r.addedOn:null,doneOn:isIso(r.doneOn)?r.doneOn:null,carried:toBool(r.carried),carriedFrom:r.carriedFrom?String(r.carriedFrom):"",createdAt:Number(r.createdAt)||0,images:parseImgs(r.images),note:String(r.note??"")}}
 function normLog(r){return{id:String(r.id),week:Number(r.week),date:isIso(r.date)?r.date:iso(today()),kind:r.kind==="open"?"open":"close",team:r.team?String(r.team):"",text:String(r.text??""),createdAt:Number(r.createdAt)||0,images:parseImgs(r.images)}}
 
 /* ---------- state ---------- */
-const S={week:1,team:"all",tab:"tasks",tasks:[],logs:[],summary:null,ai:false,needsCode:false,code:lsGet("mm_team_code")||"",ready:false,panel:null,sig:"",busy:0};
+const S={week:1,team:"all",tab:"tasks",tasks:[],logs:[],summary:null,ai:false,needsCode:false,code:lsGet("mm_team_code")||"",ready:false,panel:null,sig:"",busy:0,editTask:null,editLog:null,editSum:null};
 function readHash(){const m=/^#w(\d{1,2})$/.exec(location.hash);return m?Math.max(1,Number(m[1])):null}
 const canEdit=()=>S.ready&&(!S.needsCode||!!S.code);
 
@@ -534,9 +556,20 @@ function renderTasks(){
         del.classList.add("arm");del.textContent="מחק?";setTimeout(()=>{del.classList.remove("arm");del.textContent="×"},2500);
       });
       const cam=el("button",{class:"camera","aria-label":"צרף תמונה",title:"צרף תמונה",hidden:!edit,onclick:()=>attachToTask(t)},"📷");
-      card.append(el("div",{class:"task"+(t.done?" done":"")},chk,
-        el("div",{class:"t"},el("div",{class:"title",text:t.title}),el("div",{class:"tags"},taskTags(t)),driveThumbs(t.images,edit?(id=>removeFromTask(t,id)):null)),
-        el("div",{class:"tact"},cam,del)));
+      const pen=el("button",{class:"icon","aria-label":"ערוך משימה",title:"ערוך",hidden:!edit,onclick:()=>{S.editTask={id:t.id,title:t.title,note:t.note||""};renderTasks();const i=$("et-title");if(i)i.focus()}},"✏️");
+      let body;
+      if(S.editTask&&S.editTask.id===t.id){
+        const D=S.editTask;
+        const ti=el("input",{type:"text",id:"et-title","aria-label":"כותרת המשימה"}); ti.value=D.title; ti.oninput=()=>D.title=ti.value;
+        const no=el("textarea",{id:"et-note",placeholder:"הערה (לא חובה)","aria-label":"הערה"}); no.value=D.note; no.oninput=()=>D.note=no.value;
+        ti.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();saveTaskEdit(t)}if(e.key==="Escape"){S.editTask=null;renderTasks()}});
+        body=el("div",{class:"t"},el("div",{class:"editbox"},ti,no,el("div",{class:"editbtns"},
+          el("button",{class:"btn primary sm",onclick:()=>saveTaskEdit(t)},"שמור"),
+          el("button",{class:"btn ghost sm",onclick:()=>{S.editTask=null;renderTasks()}},"ביטול"))));
+      }else{
+        body=el("div",{class:"t"},el("div",{class:"title",text:t.title}),t.note?el("div",{class:"note",text:t.note}):null,el("div",{class:"tags"},taskTags(t)),driveThumbs(t.images,edit?(id=>removeFromTask(t,id)):null));
+      }
+      card.append(el("div",{class:"task"+(t.done?" done":"")},chk,body,el("div",{class:"tact"},cam,pen,del)));
     }
     if(edit){
       const inp=el("input",{type:"text",placeholder:"משימה חדשה ל"+tm.name,id:"add-"+tm.id,"aria-label":"משימה חדשה ל"+tm.name});
@@ -551,23 +584,82 @@ function renderTasks(){
   if(focused&&$(focused)){const f=$(focused);f.focus();f.setSelectionRange(f.value.length,f.value.length)}
 }
 
+async function saveTaskEdit(t){
+  const D=S.editTask; if(!D||!guard()) return;
+  const title=D.title.trim().slice(0,300), note=D.note.trim().slice(0,2000);
+  if(!title){toast("הכותרת לא יכולה להיות ריקה");return}
+  const prev={title:t.title,note:t.note};
+  t.title=title; t.note=note; S.editTask=null; renderData();
+  try{await run(()=>batch([{op:"update",sheet:"tasks",id:t.id,fields:{title,note}}]));toast("המשימה עודכנה")}
+  catch(e){Object.assign(t,prev);renderData();writeErr(e)}
+  refresh();
+}
+
 /* ---------- logs view ---------- */
 function renderLogs(){
   const box=$("logs"); box.textContent="";
   const list=[...S.logs].sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt-a.createdAt));
   if(!list.length){box.append(el("div",{class:"notice"},"עוד לא נוספו סיכומים יומיים לשבוע הזה. לחצו על ",el("b",{text:"+ סיכום יומי"})," כדי להוסיף סיכום פתיחה או סגירה."));return}
-  for(const l of list){
-    const d=parseIso(l.date);
-    box.append(el("div",{class:"log"+(l.kind==="open"?" open":"")},
-      el("div",{class:"meta"},el("b",{text:l.kind==="open"?"פתיחה":"סגירה"}),el("span",{text:"יום "+HEB_DAYS[d.getDay()]+" "+dm(d)}),el("span",{text:l.team&&TEAM[l.team]?TEAM[l.team].name:"כמה צוותים"})),
-      el("pre",{text:l.text}),driveThumbs(l.images)));
-  }
+  for(const l of list) box.append(renderLogItem(l));
+}
+function renderLogItem(l){
+  const edit=canEdit();
+  if(S.editLog&&S.editLog.id===l.id) return renderLogEditor(l);
+  const d=parseIso(l.date);
+  const del=el("button",{class:"icon","aria-label":"מחק סיכום",title:"מחק",hidden:!edit},"🗑");
+  del.addEventListener("click",()=>{
+    if(del.classList.contains("arm")){deleteLog(l);return}
+    del.classList.add("arm");del.textContent="למחוק?";setTimeout(()=>{del.classList.remove("arm");del.textContent="🗑"},3000);
+  });
+  return el("div",{class:"log"+(l.kind==="open"?" open":"")},
+    el("div",{class:"meta"},el("b",{text:l.kind==="open"?"פתיחה":"סגירה"}),el("span",{text:"יום "+HEB_DAYS[d.getDay()]+" "+dm(d)}),el("span",{text:l.team&&TEAM[l.team]?TEAM[l.team].name:"כמה צוותים"}),
+      el("span",{class:"grow"}),
+      el("button",{class:"icon","aria-label":"ערוך סיכום",title:"ערוך",hidden:!edit,onclick:()=>{S.editLog={id:l.id,date:l.date,kind:l.kind,team:l.team||"",text:l.text,images:[...l.images],add:[],saving:false};renderLogs()}},"✏️"),del),
+    el("pre",{text:l.text}),driveThumbs(l.images));
+}
+function renderLogEditor(l){
+  const D=S.editLog;
+  const date=el("input",{type:"date",id:"el-date",value:D.date}); date.onchange=()=>D.date=date.value;
+  const kind=el("select",{id:"el-kind"},el("option",{value:"open",text:"פתיחה"}),el("option",{value:"close",text:"סגירה"})); kind.value=D.kind; kind.onchange=()=>D.kind=kind.value;
+  const team=el("select",{id:"el-team"},el("option",{value:"",text:"כמה צוותים"}),...TEAMS.map(t=>el("option",{value:t.id,text:t.name}))); team.value=D.team; team.onchange=()=>D.team=team.value;
+  const ta=el("textarea",{id:"el-text",style:"min-height:150px","aria-label":"טקסט הסיכום"}); ta.value=D.text; ta.oninput=()=>D.text=ta.value;
+  ta.addEventListener("paste",async e=>{const f=[...(e.clipboardData&&e.clipboardData.files||[])].filter(x=>/^image\//.test(x.type));if(f.length){e.preventDefault();for(const x of f){try{D.add.push(await shrink(x))}catch(err){}}renderLogs()}});
+  const thumbs=[...D.images.map(id=>thumbEl(imgUrl(id,400),imgUrl(id,1600),()=>{D.images=D.images.filter(x=>x!==id);renderLogs()})),
+    ...D.add.map((im,i)=>thumbEl(im.preview,im.preview,()=>{D.add.splice(i,1);renderLogs()}))];
+  return el("div",{class:"log"+(D.kind==="open"?" open":"")},el("div",{class:"editbox"},
+    el("div",{class:"editrow"},el("label",null,"תאריך",date),el("label",null,"סוג",kind),el("label",null,"צוות",team)),
+    ta,
+    el("div",{class:"attach",style:"margin-top:0"},el("button",{class:"btn ghost sm",type:"button",onclick:()=>pickFiles(async fs=>{for(const x of fs){try{D.add.push(await shrink(x))}catch(err){}}renderLogs()})},"📷 הוסף תמונות"),
+      thumbs.length?el("div",{class:"thumbs",style:"margin:0"},thumbs):null),
+    el("div",{class:"editbtns"},
+      el("button",{class:"btn primary sm",disabled:D.saving,onclick:()=>saveLogEdit(l)},D.saving?(D.progress||"שומר…"):"שמור שינויים"),
+      el("button",{class:"btn ghost sm",onclick:()=>{S.editLog=null;renderLogs()}},"ביטול"),
+      el("span",{class:"hint",text:"שינוי הטקסט לא משנה משימות שכבר נוצרו. אותן עורכים בלשונית משימות."}))));
+}
+async function saveLogEdit(l){
+  const D=S.editLog; if(!D||!guard()) return;
+  if(!isIso(D.date)){toast("בחרו תאריך");return}
+  D.saving=true; renderLogs();
+  try{
+    const ids=[...D.images];
+    for(let i=0;i<D.add.length;i++){D.progress="מעלה תמונות "+(i+1)+"/"+D.add.length+"…";renderLogs();ids.push(await run(()=>uploadImg(D.add[i])))}
+    const w=weekOf(parseIso(D.date));
+    await run(()=>batch([{op:"update",sheet:"logs",id:l.id,fields:{date:D.date,week:w,kind:D.kind,team:D.team,text:D.text.slice(0,20000),images:ids}}]));
+    S.editLog=null; toast(w!==S.week?"הסיכום עודכן והועבר לשבוע "+w:"הסיכום עודכן"); refresh();
+  }catch(e){D.saving=false;D.progress="";renderLogs();imgErr(e)}
+}
+async function deleteLog(l){
+  if(!guard()) return;
+  const keep=S.logs; S.logs=S.logs.filter(x=>x.id!==l.id); renderLogs();
+  try{await run(()=>batch([{op:"delete",sheet:"logs",id:l.id}]));toast("הסיכום נמחק")}catch(e){S.logs=keep;renderLogs();writeErr(e)}
+  refresh();
 }
 
 /* ---------- loading ---------- */
 function setStatus(msg){const b=$("status");b.textContent="";if(msg)b.append(el("div",{class:"notice",text:msg}))}
 async function loadWeek(silent){
   if(!CONFIGURED||!S.ready) return;
+  if(silent&&(S.editTask||S.editLog||S.editSum)) return;
   const w=S.week;
   try{
     const [t,l,s]=await Promise.all([api("query",{sheet:"tasks",where:{week:w}}),api("query",{sheet:"logs",where:{week:w}}),api("query",{sheet:"summaries",where:{id:"w"+w}})]);
@@ -577,7 +669,7 @@ async function loadWeek(silent){
     S.sig=sig;
     S.tasks=t.rows.map(normTask); S.logs=l.rows.map(normLog);
     S.summary=null;
-    if(s.rows[0]){try{S.summary={ai:JSON.parse(s.rows[0].json),generatedAt:Number(s.rows[0].generatedAt)||0}}catch(e){}}
+    if(s.rows[0]){try{S.summary={ai:JSON.parse(s.rows[0].json),generatedAt:Number(s.rows[0].generatedAt)||0,editedAt:Number(s.rows[0].editedAt)||0}}catch(e){}}
     setStatus("");
     renderData();
   }catch(e){ if(!silent) setStatus("לא הצלחתי לטעון את הנתונים. בדקו את החיבור ורעננו את הדף."); }
@@ -674,7 +766,13 @@ function renderProposal(){
     const sel=el("select",{"aria-label":"צוות"},...TEAMS.map(t=>el("option",{value:t.id,text:t.name}))); sel.value=it.team; sel.onchange=()=>it.team=sel.value;
     const txt=el("input",{type:"text",value:it.text,"aria-label":"תיאור"}); txt.oninput=()=>it.text=txt.value;
     if(it.kind==="complete"){sel.disabled=true;txt.readOnly=true}
-    wrap.append(el("div",{class:"prow"},cb,el("span",{class:"kind "+it.kind,text:kinds[it.kind]}),sel,txt));
+    let kindEl;
+    if(it.kind==="complete") kindEl=el("span",{class:"kind complete",text:kinds.complete});
+    else{
+      kindEl=el("select",{class:"kind-sel "+it.kind,"aria-label":"סטטוס"},el("option",{value:"new_done",text:"בוצע"}),el("option",{value:"new_todo",text:"משימה חדשה"}));
+      kindEl.value=it.kind; kindEl.onchange=()=>{it.kind=kindEl.value;kindEl.className="kind-sel "+it.kind};
+    }
+    wrap.append(el("div",{class:"prow"},cb,kindEl,sel,txt));
   });
   wrap.append(el("div",{class:"actions"},
     el("button",{class:"btn primary",onclick:applyProposal,disabled:P.working},P.working?(P.progress||"שומר…"):"שמור סיכום ועדכן משימות"),
@@ -818,6 +916,9 @@ function renderDeck(){
   const ai=S.summary&&S.summary.ai||null;
   const g=$("genSummary"); g.hidden=!S.ai||!S.ready; g.textContent=ai?"הפק מחדש עם Gemini":"הפק סיכום שבוע עם Gemini";
   $("genInfo").textContent=S.summary&&S.summary.generatedAt?"נוצר "+new Date(S.summary.generatedAt).toLocaleString("he-IL",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"}):(S.ai?"":"רשימות הבוצע/פתוח מתעדכנות לבד. כתיבת הסיכום המילולי דורשת חיבור ל-Gemini.");
+  if(S.summary&&S.summary.editedAt) $("genInfo").textContent="נערך "+new Date(S.summary.editedAt).toLocaleString("he-IL",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"});
+  $("editSummary").hidden=!S.ready||!!S.editSum;
+  renderSumEdit();
   const openAll=S.tasks.filter(t=>!t.done&&!t.carried);
   const cb=$("carryOver"); cb.hidden=!openAll.length||!S.ready; cb.textContent="העבר "+openAll.length+" משימות פתוחות לשבוע "+(S.week+1);
 
@@ -894,14 +995,53 @@ ${logsTxt||"(אין)"}
       teams:(Array.isArray(r.teams)?r.teams:[]).filter(t=>t&&TEAM[t.teamId]).map(t=>({teamId:t.teamId,summary:String(t.summary||"").slice(0,400),nextWeek:(Array.isArray(t.nextWeek)?t.nextWeek:[]).slice(0,4).map(x=>String(x).slice(0,140))})),
       focusNextWeek:(Array.isArray(r.focusNextWeek)?r.focusNextWeek:[]).slice(0,7).map(x=>String(x).slice(0,160))};
     const now=Date.now();
-    await run(()=>batch([{op:"upsert",sheet:"summaries",row:{id:"w"+S.week,week:S.week,json:JSON.stringify(clean),generatedAt:now}}]));
-    S.summary={ai:clean,generatedAt:now};
+    await run(()=>batch([{op:"upsert",sheet:"summaries",row:{id:"w"+S.week,week:S.week,json:JSON.stringify(clean),generatedAt:now,editedAt:""}}]));
+    S.summary={ai:clean,generatedAt:now,editedAt:0};
     toast("סיכום השבוע נוצר");
   }catch(err){
     if(err&&err.code==="bad_code") writeErr(err);
     else if(err&&err.code==="ai_rate_limited") toast("Gemini עמוס כרגע, נסו שוב בעוד דקה");
     else toast("יצירת הסיכום נכשלה, נסו שוב");
   }finally{btn.disabled=false;renderDeck()}
+}
+function startSumEdit(){
+  if(!guard()) return;
+  const ai=S.summary&&S.summary.ai||{}, aiTeams=Array.isArray(ai.teams)?ai.teams:[];
+  const active=TEAMS.filter(t=>teamStats(t.id).list.length||aiTeams.some(z=>z.teamId===t.id));
+  S.editSum={headline:ai.headline||"",overview:ai.overview||"",focus:(ai.focusNextWeek||[]).join("\n"),saving:false,
+    teams:active.map(t=>{const z=aiTeams.find(x=>x.teamId===t.id)||{};return{teamId:t.id,summary:z.summary||"",next:(z.nextWeek||[]).join("\n")}})};
+  renderDeck(); const f=$("se-headline"); if(f) f.focus();
+}
+function renderSumEdit(){
+  const box=$("sumEdit"); box.textContent="";
+  const D=S.editSum; if(!D) return;
+  const inp=(id,val,set,ph)=>{const i=el("input",{type:"text",id,placeholder:ph||""});i.value=val;i.oninput=()=>set(i.value);return i};
+  const area=(id,val,set,ph,h)=>{const a=el("textarea",{id,placeholder:ph||"",style:h?"min-height:"+h+"px":null});a.value=val;a.oninput=()=>set(a.value);return a};
+  const teamsEls=D.teams.map((z,i)=>el("div",{class:"team-ed"},el("h4",{text:"צוות "+(TEAM[z.teamId]?TEAM[z.teamId].name:z.teamId)}),
+    el("label",null,"משפט סיכום",area("se-t"+i,z.summary,v=>z.summary=v,"מה הצוות עשה השבוע",60)),
+    el("label",null,"פוקוס לשבוע הבא (שורה לכל פריט)",area("se-n"+i,z.next,v=>z.next=v,"",60))));
+  box.append(el("div",{class:"panel sumedit"},el("h3",{text:"עריכת סיכום שבוע "+S.week}),el("div",{class:"editbox"},
+    el("label",null,"כותרת השבוע",inp("se-headline",D.headline,v=>D.headline=v,"למשל: השלדה עומדת, האיסוף בדרך")),
+    el("label",null,"סיכום כללי",area("se-overview",D.overview,v=>D.overview=v,"2-3 משפטים על השבוע",80)),
+    teamsEls,
+    el("label",{style:"margin-top:6px"},"פוקוס לשבוע הבא לכל הקבוצה (שורה לכל פריט)",area("se-focus",D.focus,v=>D.focus=v,"",80)),
+    el("div",{class:"hint",text:"רשימות \"בוצע\" ו\"נשאר פתוח\" בשקפים מגיעות מהמשימות עצמן. כדי לשנות אותן, ערכו את המשימות בלשונית משימות."}),
+    el("div",{class:"editbtns"},
+      el("button",{class:"btn primary sm",disabled:D.saving,onclick:saveSumEdit},D.saving?"שומר…":"שמור סיכום"),
+      el("button",{class:"btn ghost sm",onclick:()=>{S.editSum=null;renderDeck()}},"ביטול"),
+      el("button",{class:"btn ghost sm",onclick:()=>{S.editSum=null;setTab("tasks")}},"לעריכת המשימות")))));
+}
+async function saveSumEdit(){
+  const D=S.editSum; if(!D||!guard()) return;
+  D.saving=true; renderSumEdit();
+  const clean={headline:D.headline.trim().slice(0,120),overview:D.overview.trim().slice(0,800),
+    teams:D.teams.map(z=>({teamId:z.teamId,summary:z.summary.trim().slice(0,400),nextWeek:lines(z.next).slice(0,4).map(x=>x.slice(0,140))})).filter(z=>z.summary||z.nextWeek.length),
+    focusNextWeek:lines(D.focus).slice(0,7).map(x=>x.slice(0,160))};
+  const now=Date.now(), gen=S.summary&&S.summary.generatedAt||now;
+  try{
+    await run(()=>batch([{op:"upsert",sheet:"summaries",row:{id:"w"+S.week,week:S.week,json:JSON.stringify(clean),generatedAt:gen,editedAt:now}}]));
+    S.summary={ai:clean,generatedAt:gen,editedAt:now}; S.editSum=null; toast("סיכום השבוע נשמר"); renderDeck();
+  }catch(e){D.saving=false;renderSumEdit();writeErr(e)}
 }
 function summaryText(){
   const s=weekStart(S.week), e=weekEnd(S.week), ai=S.summary&&S.summary.ai;
@@ -949,7 +1089,8 @@ $("openDaily").onclick=openPanel;
 $("genSummary").onclick=generateSummary;
 $("copySummary").onclick=copySummary;
 $("carryOver").onclick=carryOver;
-addEventListener("hashchange",()=>{const w=readHash();if(w&&w!==S.week){S.week=w;S.tasks=[];S.logs=[];S.summary=null;S.sig="";renderAll();loadWeek(false)}});
+$("editSummary").onclick=startSumEdit;
+addEventListener("hashchange",()=>{const w=readHash();if(w&&w!==S.week){S.week=w;S.editTask=null;S.editLog=null;S.editSum=null;S.tasks=[];S.logs=[];S.summary=null;S.sig="";renderAll();loadWeek(false)}});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!S.busy)loadWeek(true)});
 setInterval(()=>{if(document.visibilityState==="visible"&&!S.busy&&!(S.panel&&S.panel.working))loadWeek(true)},POLL_MS);
 
