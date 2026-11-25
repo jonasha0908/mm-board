@@ -129,7 +129,7 @@ textarea.big{width:100%;min-height:150px;resize:vertical;margin-top:10px;line-he
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
 .hint{color:var(--muted);font-size:.8rem}
 .prop{margin-top:14px;border-top:1px solid #ffffff14;padding-top:12px}
-.prow{display:grid;grid-template-columns:22px 128px 150px 1fr;gap:8px;align-items:center;padding:4px 0}
+.prow{display:grid;grid-template-columns:22px 128px 150px 1fr 30px;gap:8px;align-items:center;padding:4px 0}
 .prow input[type=text],.prow select{background:#00000033;border:1px solid #ffffff1c;border-radius:7px;padding:4px 8px;font-size:.88rem;min-width:0}
 .kind{font-size:.75rem;font-weight:700;border-radius:6px;padding:2px 6px;text-align:center}
 .kind.complete{background:#57d39a22;color:var(--ok)}
@@ -824,11 +824,15 @@ function renderProposal(){
     const opts=it.taskId?["complete","update"]:["new_done","new_progress","new_todo"];
     const kindEl=el("select",{class:"kind-sel "+it.kind,"aria-label":"סטטוס"},opts.map(k=>el("option",{value:k,text:kinds[k]})));
     kindEl.value=it.kind; kindEl.onchange=()=>{it.kind=kindEl.value;renderPanel()};
-    wrap.append(el("div",{class:"prow"},cb,kindEl,sel,txt));
+    const cam=el("button",{class:"camera",type:"button","aria-label":"צרף תמונה למשימה",title:"צרף תמונה למשימה",
+      onclick:()=>pickFiles(async fs=>{it.images=it.images||[];for(const f of fs){try{it.images.push(await shrink(f))}catch(e){}}renderPanel()})},"📷");
+    wrap.append(el("div",{class:"prow"},cb,kindEl,sel,txt,cam));
     if(it.kind==="update"||it.kind==="new_progress"){
       const ni=el("input",{type:"text",placeholder:"מה המצב? למשל: נבנה הציר, חסרה הרכבה","aria-label":"מצב המשימה"}); ni.value=it.note||""; ni.oninput=()=>it.note=ni.value;
       wrap.append(el("div",{class:"pnote"},ni));
     }
+    if(it.images&&it.images.length) wrap.append(el("div",{class:"pnote"},el("div",{class:"thumbs",style:"grid-column:2;margin:0"},
+      it.images.map((im,i)=>thumbEl(im.preview,im.preview,()=>{it.images.splice(i,1);renderPanel()})))));
   });
   wrap.append(el("div",{class:"actions"},
     el("button",{class:"btn primary",onclick:applyProposal,disabled:P.working},P.working?(P.progress||"שומר…"):"שמור סיכום ועדכן משימות"),
@@ -940,8 +944,12 @@ async function applyProposal(){
   const P=S.panel; if(!P||!guard()) return;
   P.working=true; P.progress=""; renderPanel();
   const imgIds=[];
+  const rowImgs=P.proposal.filter(it=>it.include&&it.images&&it.images.length);
+  const total=P.images.length+rowImgs.reduce((n,it)=>n+it.images.length,0); let k=0;
+  const step=()=>{k++;P.progress="מעלה תמונות "+k+"/"+total+"…";renderPanel()};
   try{
-    for(let i=0;i<P.images.length;i++){P.progress="מעלה תמונות "+(i+1)+"/"+P.images.length+"…";renderPanel();imgIds.push(await run(()=>uploadImg(P.images[i])))}
+    for(const im of P.images){step();imgIds.push(await run(()=>uploadImg(im)))}
+    for(const it of rowImgs){it.imgIds=[];for(const im of it.images){step();it.imgIds.push(await run(()=>uploadImg(im)))}}
   }catch(e){P.working=false;P.progress="";renderPanel();imgErr(e);return}
   P.progress="שומר…"; renderPanel();
   const w=weekOf(parseIso(P.date)), src=P.kind==="open"?"opening":"daily", now=Date.now();
@@ -949,15 +957,17 @@ async function applyProposal(){
   P.proposal.forEach((it,i)=>{
     if(!it.include||!String(it.text).trim()) return;
     const upd=String(it.note||"").trim().slice(0,300);
-    if(it.kind==="complete") ops.push({op:"update",sheet:"tasks",id:it.taskId,fields:{done:true,doneOn:P.date,doneBy:S.me}});
+    const ex=it.taskId?(P.existing||[]).find(t=>t.id===it.taskId):null, ri=it.imgIds||[];
+    const withImgs=f=>{if(ri.length)f.images=[...(ex?ex.images:[]),...ri];return f};
+    if(it.kind==="complete") ops.push({op:"update",sheet:"tasks",id:it.taskId,fields:withImgs({done:true,doneOn:P.date,doneBy:S.me})});
     else if(it.kind==="update"){
-      if(!upd) return;
-      const ex=(P.existing||[]).find(t=>t.id===it.taskId);
-      ops.push({op:"update",sheet:"tasks",id:it.taskId,fields:{updates:[...(ex?ex.updates:[]),{d:P.date,t:upd,by:S.me}]}});
+      if(!upd&&!ri.length) return;
+      const f={}; if(upd) f.updates=[...(ex?ex.updates:[]),{d:P.date,t:upd,by:S.me}];
+      ops.push({op:"update",sheet:"tasks",id:it.taskId,fields:withImgs(f)});
     }
     else ops.push({op:"insert",sheet:"tasks",row:{id:uid("t"),week:w,team:it.team,title:String(it.text).trim().slice(0,300),done:it.kind==="new_done",
       source:it.kind==="new_done"?"daily":src,addedOn:P.date,doneOn:it.kind==="new_done"?P.date:"",carried:false,carriedFrom:"",createdAt:now+i,createdBy:S.me,doneBy:it.kind==="new_done"?S.me:"",
-      updates:it.kind==="new_progress"&&upd?[{d:P.date,t:upd,by:S.me}]:[]}});
+      updates:it.kind==="new_progress"&&upd?[{d:P.date,t:upd,by:S.me}]:[],images:ri}});
   });
   try{
     await run(()=>batch(ops));
