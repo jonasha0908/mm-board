@@ -222,6 +222,27 @@ textarea.big{width:100%;min-height:150px;resize:vertical;margin-top:10px;line-he
   .mini{height:8px}
   .deck{gap:14px}
 }
+.thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid #ffffff22;background:#0004;padding:0;cursor:zoom-in;flex:0 0 auto}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .x{position:absolute;top:2px;left:2px;background:#000b;color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:20px;padding:0;cursor:pointer}
+.thumb.pending{opacity:.6}
+.log .thumbs .thumb{width:96px;height:96px}
+.tact{display:flex;align-items:flex-start;gap:2px}
+.camera{background:none;border:0;color:#ffffff55;padding:0 4px;font-size:1rem;line-height:1.4}
+.camera:hover{color:var(--glow)}
+.attach{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+.lightbox{position:fixed;inset:0;background:#000e;z-index:30;display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top,0px)) 16px;cursor:zoom-out}
+.lightbox img{max-width:100%;max-height:100%;border-radius:8px}
+.s-gallery{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:1.4cqw;flex:1;min-height:0;margin-top:1.6cqw}
+.s-gallery figure{margin:0;position:relative;border:.25cqw solid #5cc3d6;border-radius:1cqw;overflow:hidden;min-height:0;background:#0006;cursor:zoom-in}
+.s-gallery img{width:100%;height:100%;object-fit:cover;display:block}
+.s-gallery figcaption{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,#000c);color:#fff;font-size:1.25cqw;padding:1.4cqw .9cqw .6cqw}
+@media (max-width:640px){
+  .s-gallery{grid-template-columns:repeat(2,1fr);grid-auto-rows:130px;gap:8px;margin-top:12px}
+  .s-gallery figure{border-width:2px;border-radius:10px}
+  .s-gallery figcaption{font-size:11px;padding:14px 6px 4px}
+}
 .install{border:1.5px solid var(--glow);color:var(--glow);background:none;border-radius:999px;padding:3px 12px;font-size:.8rem;font-weight:700;white-space:nowrap}
 .ioshint{display:flex;gap:10px;align-items:center;justify-content:space-between}
 .ioshint button{background:none;border:0;color:var(--muted);font-size:1.1rem}
@@ -366,9 +387,12 @@ async function ai(prompt){const r=await api("ai",{prompt});return r.result}
 
 /* ---------- normalizers ---------- */
 const toBool=v=>v===true||v==="TRUE"||v==="true"||v===1;
+const okImg=x=>typeof x==="string"&&/^[\w-]{10,200}$/.test(x);
+function parseImgs(v){if(Array.isArray(v))return v.filter(okImg);if(typeof v==="string"&&v.trim().startsWith("[")){try{const a=JSON.parse(v);return Array.isArray(a)?a.filter(okImg):[]}catch(e){}}return[]}
+const imgUrl=(id,w)=>"https://drive.google.com/thumbnail?id="+encodeURIComponent(id)+"&sz=w"+(w||1600);
 function normTask(r){return{id:String(r.id),week:Number(r.week),team:String(r.team||""),title:String(r.title??""),done:toBool(r.done),source:String(r.source||"manual"),
-  addedOn:isIso(r.addedOn)?r.addedOn:null,doneOn:isIso(r.doneOn)?r.doneOn:null,carried:toBool(r.carried),carriedFrom:r.carriedFrom?String(r.carriedFrom):"",createdAt:Number(r.createdAt)||0}}
-function normLog(r){return{id:String(r.id),week:Number(r.week),date:isIso(r.date)?r.date:iso(today()),kind:r.kind==="open"?"open":"close",team:r.team?String(r.team):"",text:String(r.text??""),createdAt:Number(r.createdAt)||0}}
+  addedOn:isIso(r.addedOn)?r.addedOn:null,doneOn:isIso(r.doneOn)?r.doneOn:null,carried:toBool(r.carried),carriedFrom:r.carriedFrom?String(r.carriedFrom):"",createdAt:Number(r.createdAt)||0,images:parseImgs(r.images)}}
+function normLog(r){return{id:String(r.id),week:Number(r.week),date:isIso(r.date)?r.date:iso(today()),kind:r.kind==="open"?"open":"close",team:r.team?String(r.team):"",text:String(r.text??""),createdAt:Number(r.createdAt)||0,images:parseImgs(r.images)}}
 
 /* ---------- state ---------- */
 const S={week:1,team:"all",tab:"tasks",tasks:[],logs:[],summary:null,ai:false,needsCode:false,code:lsGet("mm_team_code")||"",ready:false,panel:null,sig:"",busy:0};
@@ -414,6 +438,65 @@ function renderCodeBar(){
     el("div",{class:"addrow"},inp,el("button",{onclick:go},"כניסה"))));
 }
 
+/* ---------- images ---------- */
+function openLightbox(src){
+  const lb=el("div",{class:"lightbox",role:"dialog","aria-label":"תמונה"},el("img",{src,alt:"",referrerpolicy:"no-referrer"}));
+  const close=()=>{lb.remove();removeEventListener("keydown",onKey)};
+  const onKey=e=>{if(e.key==="Escape")close()};
+  lb.addEventListener("click",close); addEventListener("keydown",onKey);
+  document.body.append(lb);
+}
+function thumbEl(src,full,onRemove,pending){
+  const b=el("button",{class:"thumb"+(pending?" pending":""),type:"button","aria-label":"הגדל תמונה",onclick:()=>openLightbox(full||src)},el("img",{src,alt:"",loading:"lazy",referrerpolicy:"no-referrer"}));
+  if(onRemove){const x=el("span",{class:"x",role:"button","aria-label":"הסר תמונה",title:"הסר"},"×");x.addEventListener("click",e=>{e.stopPropagation();onRemove()});b.append(x)}
+  return b;
+}
+function driveThumbs(ids,onRemove){
+  if(!ids||!ids.length) return null;
+  return el("div",{class:"thumbs"},ids.map(id=>thumbEl(imgUrl(id,400),imgUrl(id,1600),onRemove?()=>onRemove(id):null)));
+}
+async function shrink(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});
+    const max=1600, k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
+    const c=document.createElement("canvas"); c.width=Math.max(1,Math.round(img.naturalWidth*k)); c.height=Math.max(1,Math.round(img.naturalHeight*k));
+    const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
+    const dataUrl=c.toDataURL("image/jpeg",0.82);
+    return {preview:dataUrl,data:dataUrl.split(",")[1],mime:"image/jpeg",name:(file.name||"image").replace(/\.[^.]+$/,"").slice(0,60)+".jpg"};
+  }finally{URL.revokeObjectURL(url)}
+}
+async function uploadImg(it){const r=await api("upload",{name:it.name,mime:it.mime,data:it.data});return r.id}
+function pickFiles(cb){
+  const inp=el("input",{type:"file",accept:"image/*",multiple:true,hidden:true});
+  inp.addEventListener("change",()=>{const f=[...inp.files].filter(x=>/^image\//.test(x.type));inp.remove();if(f.length)cb(f)});
+  document.body.append(inp); inp.click();
+}
+async function attachToTask(t){
+  if(!guard()) return;
+  pickFiles(async files=>{
+    toast("מעלה "+files.length+" תמונות…");
+    try{
+      const ids=[];
+      for(const f of files){ids.push(await run(async()=>uploadImg(await shrink(f))))}
+      const images=[...(t.images||[]),...ids];
+      await run(()=>batch([{op:"update",sheet:"tasks",id:t.id,fields:{images}}]));
+      t.images=images; renderData(); toast("התמונות נוספו"); refresh();
+    }catch(e){imgErr(e)}
+  });
+}
+async function removeFromTask(t,id){
+  if(!guard()) return;
+  const images=(t.images||[]).filter(x=>x!==id);
+  try{await run(()=>batch([{op:"update",sheet:"tasks",id:t.id,fields:{images}}]));t.images=images;renderData();refresh()}catch(e){writeErr(e)}
+}
+function imgErr(e){
+  if(e&&e.code==="bad_code") return writeErr(e);
+  if(e&&e.code==="unknown_action") return toast("צריך לעדכן את הקוד בצד של גוגל כדי להעלות תמונות");
+  if(e&&e.code==="bad_file") return toast("הקובץ גדול מדי או שאינו תמונה");
+  toast("העלאת התמונה נכשלה, נסו שוב");
+}
+
 /* ---------- tasks view ---------- */
 function renderChips(){
   const box=$("teamChips"); box.textContent="";
@@ -450,7 +533,10 @@ function renderTasks(){
         if(del.classList.contains("arm")){deleteTask(t);return}
         del.classList.add("arm");del.textContent="מחק?";setTimeout(()=>{del.classList.remove("arm");del.textContent="×"},2500);
       });
-      card.append(el("div",{class:"task"+(t.done?" done":"")},chk,el("div",{class:"t"},el("div",{class:"title",text:t.title}),el("div",{class:"tags"},taskTags(t))),del));
+      const cam=el("button",{class:"camera","aria-label":"צרף תמונה",title:"צרף תמונה",hidden:!edit,onclick:()=>attachToTask(t)},"📷");
+      card.append(el("div",{class:"task"+(t.done?" done":"")},chk,
+        el("div",{class:"t"},el("div",{class:"title",text:t.title}),el("div",{class:"tags"},taskTags(t)),driveThumbs(t.images,edit?(id=>removeFromTask(t,id)):null)),
+        el("div",{class:"tact"},cam,del)));
     }
     if(edit){
       const inp=el("input",{type:"text",placeholder:"משימה חדשה ל"+tm.name,id:"add-"+tm.id,"aria-label":"משימה חדשה ל"+tm.name});
@@ -474,7 +560,7 @@ function renderLogs(){
     const d=parseIso(l.date);
     box.append(el("div",{class:"log"+(l.kind==="open"?" open":"")},
       el("div",{class:"meta"},el("b",{text:l.kind==="open"?"פתיחה":"סגירה"}),el("span",{text:"יום "+HEB_DAYS[d.getDay()]+" "+dm(d)}),el("span",{text:l.team&&TEAM[l.team]?TEAM[l.team].name:"כמה צוותים"})),
-      el("pre",{text:l.text})));
+      el("pre",{text:l.text}),driveThumbs(l.images)));
   }
 }
 
@@ -535,7 +621,7 @@ async function deleteTask(t){
 function openPanel(){
   if(!guard()) return;
   const t=today(), inWeek=weekOf(t)===S.week;
-  S.panel={team:"auto",date:iso(inWeek?t:weekStart(S.week)),kind:new Date().getHours()<14?"open":"close",mode:"paste",text:"",done:"",todo:"",proposal:null,error:"",working:false};
+  S.panel={team:"auto",date:iso(inWeek?t:weekStart(S.week)),kind:new Date().getHours()<14?"open":"close",mode:"paste",text:"",done:"",todo:"",images:[],proposal:null,error:"",working:false,progress:""};
   renderPanel(); renderHead();
 }
 function closePanel(){S.panel=null;renderPanel();renderHead()}
@@ -561,11 +647,17 @@ function renderPanel(){
     const b=el("textarea",{class:"big",id:"p-todo",placeholder:"צריך לעשות, שורה לכל משימה"}); b.value=P.todo; b.oninput=()=>P.todo=b.value;
     input=el("div",{class:"two"},el("label",{class:"f"},"נעשה",a),el("label",{class:"f"},"צריך לעשות",b));
   }
+  const addFiles=async files=>{for(const f of files){try{P.images.push(await shrink(f))}catch(e){}}renderPanel()};
+  const tgt=P.mode==="paste"?input:input.querySelector("textarea");
+  if(tgt) tgt.addEventListener("paste",e=>{const f=[...(e.clipboardData&&e.clipboardData.files||[])].filter(x=>/^image\//.test(x.type));if(f.length){e.preventDefault();addFiles(f)}});
+  const attach=el("div",{class:"attach"},
+    el("button",{class:"btn ghost",type:"button",onclick:()=>pickFiles(addFiles)},"📷 צרף תמונות"),
+    P.images.length?el("div",{class:"thumbs",style:"margin:0"},P.images.map((im,i)=>thumbEl(im.preview,im.preview,()=>{P.images.splice(i,1);renderPanel()}))):el("span",{class:"hint",text:"צילומים, שרטוטים או צילומי מסך. אפשר גם להדביק עם Ctrl+V."}));
   const wk=isIso(P.date)?weekOf(parseIso(P.date)):S.week;
   box.append(el("div",{class:"panel"},
     el("h3",{text:"סיכום יומי חדש · שבוע "+wk}),
     el("div",{class:"grid3"},el("label",{class:"f"},"צוות",teamSel),el("label",{class:"f"},"תאריך",date),el("label",{class:"f"},"סוג",kind)),
-    seg,input,
+    seg,input,attach,
     el("div",{class:"actions"},
       el("button",{class:"btn primary",disabled:P.working,onclick:runAnalyze},P.working&&!P.proposal?"מנתח…":"נתח והצע עדכונים"),
       el("button",{class:"btn ghost",onclick:closePanel},"ביטול"),
@@ -585,7 +677,7 @@ function renderProposal(){
     wrap.append(el("div",{class:"prow"},cb,el("span",{class:"kind "+it.kind,text:kinds[it.kind]}),sel,txt));
   });
   wrap.append(el("div",{class:"actions"},
-    el("button",{class:"btn primary",onclick:applyProposal,disabled:P.working},P.working?"שומר…":"שמור סיכום ועדכן משימות"),
+    el("button",{class:"btn primary",onclick:applyProposal,disabled:P.working},P.working?(P.progress||"שומר…"):"שמור סיכום ועדכן משימות"),
     el("span",{class:"hint",text:"המשימות יישמרו בשבוע "+weekOf(parseIso(P.date))+"."})));
   return wrap;
 }
@@ -688,9 +780,14 @@ async function runAnalyze(){
 }
 async function applyProposal(){
   const P=S.panel; if(!P||!guard()) return;
-  P.working=true; renderPanel();
+  P.working=true; P.progress=""; renderPanel();
+  const imgIds=[];
+  try{
+    for(let i=0;i<P.images.length;i++){P.progress="מעלה תמונות "+(i+1)+"/"+P.images.length+"…";renderPanel();imgIds.push(await run(()=>uploadImg(P.images[i])))}
+  }catch(e){P.working=false;P.progress="";renderPanel();imgErr(e);return}
+  P.progress="שומר…"; renderPanel();
   const w=weekOf(parseIso(P.date)), src=P.kind==="open"?"opening":"daily", now=Date.now();
-  const ops=[{op:"insert",sheet:"logs",row:{id:uid("l"),week:w,date:P.date,kind:P.kind,team:P.team==="auto"?"":P.team,text:composedText(P).slice(0,20000),createdAt:now}}];
+  const ops=[{op:"insert",sheet:"logs",row:{id:uid("l"),week:w,date:P.date,kind:P.kind,team:P.team==="auto"?"":P.team,text:composedText(P).slice(0,20000),createdAt:now,images:imgIds}}];
   P.proposal.forEach((it,i)=>{
     if(!it.include||!String(it.text).trim()) return;
     if(it.kind==="complete") ops.push({op:"update",sheet:"tasks",id:it.taskId,fields:{done:true,doneOn:P.date}});
@@ -751,6 +848,14 @@ function renderDeck(){
     if(tai&&Array.isArray(tai.nextWeek)&&tai.nextWeek.length) leftKids.push(el("h4",{text:"פוקוס לשבוע הבא",style:"margin-top:1.2cqw"}),el("ul",null,tai.nextWeek.slice(0,4).map(v=>el("li",{text:String(v)}))));
     deck.append(slideShell(el("h3",{class:"s-title",text:"צוות "+t.name}),tai&&tai.summary?el("p",{class:"s-lead",text:String(tai.summary)}):null,
       el("div",{class:"s-cols"},right,el("div",{class:"box"},leftKids))));
+  }
+  const gal=[];
+  for(const l of [...S.logs].sort((a,b)=>a.date.localeCompare(b.date))) for(const id of l.images) gal.push({id,cap:(l.team&&TEAM[l.team]?TEAM[l.team].name+" · ":"")+dm(parseIso(l.date))});
+  for(const t of S.tasks) for(const id of t.images) gal.push({id,cap:(TEAM[t.team]?TEAM[t.team].name+" · ":"")+t.title});
+  for(let i=0;i<gal.length;i+=6){
+    const chunk=gal.slice(i,i+6);
+    deck.append(slideShell(el("h3",{class:"s-title",text:"תמונות מהשבוע"+(gal.length>6?" ("+(i/6+1)+")":"")}),
+      el("div",{class:"s-gallery"},chunk.map(g=>el("figure",{onclick:()=>openLightbox(imgUrl(g.id,1600))},el("img",{src:imgUrl(g.id,800),alt:"",loading:"lazy",referrerpolicy:"no-referrer"}),el("figcaption",{text:g.cap.slice(0,70)}))))));
   }
   if(ai&&Array.isArray(ai.focusNextWeek)&&ai.focusNextWeek.length){
     deck.append(slideShell(el("h3",{class:"s-title",text:"פוקוס לשבוע "+(S.week+1)}),
