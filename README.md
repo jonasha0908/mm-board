@@ -1,5 +1,7 @@
 # MM לוח שבועי: מדריך הקמה
 
+> מתחזקים את האתר? התחילו מ־**`DEVELOPERS.md`**. שם מוסבר איך הכול בנוי ואיפה כל דבר בקוד.
+
 המערכת בנויה משלושה חלקים:
 - **index.html**: האתר. מתארח בחינם ב־GitHub Pages.
 - **Code.gs**: הקוד של הצד של גוגל. הוא שומר את הנתונים ב־Google Sheet ומעביר בקשות ל־Gemini.
@@ -38,7 +40,8 @@
 4. לחצו **Deploy** והעתיקו את ה־**Web app URL** (הוא מסתיים ב־`/exec`).
 
 ### חיבור האתר
-5. פתחו את `index.html` בעורך טקסט (Notepad מספיק), חפשו את השורה:
+(אם הכתובת כבר מופיעה ב־`app.js`, מדלגים על השלב הזה.)
+5. פתחו את `app.js` בעורך טקסט (Notepad מספיק), חפשו את השורה:
    ```
    const API_URL = "PASTE_WEB_APP_URL_HERE";
    ```
@@ -46,7 +49,7 @@
 
 ### פרסום ב־GitHub Pages
 6. היכנסו ל־github.com (או צרו חשבון) וצרו repository חדש בשם `mm-board`, מסוג **Public**.
-7. בתוך ה־repo: **Add file → Upload files**, גררו את **כל הקבצים** מהתיקייה (`index.html`, `manifest.webmanifest`, `sw.js` וקובצי האייקונים `*.png`. אפשר גם את `Code.gs` ואת `README.md`, לגיבוי), ולחצו **Commit changes**.
+7. בתוך ה־repo: **Add file → Upload files**, גררו את **כל הקבצים** מהתיקייה (`index.html`, `app.js`, `app.css`, `sw.js`, `manifest.webmanifest`, קובצי `*.png` ו־`*.webp`, `DEVELOPERS.md`. אפשר גם את `Code.gs` ואת `README.md`, לגיבוי), ולחצו **Commit changes**.
 8. **Settings → Pages**. תחת **Build and deployment**, ב־Source בחרו **Deploy from a branch**, ב־Branch בחרו `main` ו־`/ (root)`, ולחצו **Save**.
 9. אחרי דקה־שתיים האתר יהיה זמין בכתובת:
    `https://<שם-המשתמש-שלכם>.github.io/mm-board/`
@@ -73,14 +76,20 @@
 
 אחרי שינוי ב־Sheet מספיק לרענן את האתר.
 
+## תמונות
+
+אפשר לצרף תמונות לסיכום יומי (כפתור 📷, או הדבקה עם Ctrl+V) ולכל משימה (📷 ליד המשימה). התמונות מוקטנות אוטומטית ונשמרות בתיקייה **"MM לוח שבועי - תמונות"** ב־Google Drive של מי שהקים את המערכת, עם הרשאת צפייה למי שיש לו קישור. בסיכום השבוע הן מופיעות בשקף "תמונות מהשבוע".
+
+בפעם הראשונה צריך לאשר לקוד גישה ל־Drive: ב־Apps Script בוחרים את הפונקציה `authorize`, לוחצים **Run** ומאשרים.
+
 ## עדכונים בעתיד
 
-- **שינוי באתר** (רוב השינויים): מחליפים את `index.html` ב־GitHub (**Add file → Upload files**, ואז Commit). אם ה־repo מחובר לסשן של Claude, אפשר לבקש ממנו לדחוף את השינוי ישירות.
+- **שינוי באתר** (רוב השינויים): מחליפים את הקבצים ששונו (`app.js`, `app.css`, `index.html`) ב־GitHub (**Add file → Upload files**, ואז Commit). אם ה־repo מחובר לסשן של Claude, אפשר לבקש ממנו לדחוף את השינוי ישירות.
 - **שינוי בקוד של גוגל** (נדיר): מדביקים את `Code.gs` החדש, שומרים, ואז **Deploy → Manage deployments**. לוחצים על העיפרון, ב־Version בוחרים **New version**, ולוחצים **Deploy**. הכתובת נשארת אותה כתובת.
 - **הנתונים לא נמחקים בעדכונים**, כי הם יושבים ב־Sheet. אפשר גם לפתוח את ה־Sheet ולתקן נתון ידנית.
 
 ## בעיות נפוצות
 
-- **"לא הצלחתי להתחבר ל־Google Sheet"**: בדקו שהכתובת ב־`index.html` מסתיימת ב־`/exec`, ושבפריסה נבחר `Who has access: Anyone`.
+- **"לא הצלחתי להתחבר ל־Google Sheet"**: בדקו שהכתובת ב־`app.js` מסתיימת ב־`/exec`, ושבפריסה נבחר `Who has access: Anyone`.
 - **Gemini לא עובד**: בדקו את המפתח ב־Script Properties. אם גוגל שינו את שם המודל, עדכנו את `gemini_model` בלשונית `settings`.
 - **שיניתם את Code.gs ושום דבר לא השתנה**: צריך לפרוס **New version** (ראו "עדכונים בעתיד").

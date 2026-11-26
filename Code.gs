@@ -42,7 +42,7 @@ var DEFAULTS = {
     ['key', 'value', 'note'],
     ['season_start', '2026-09-13', 'יום ראשון של Week 1 (YYYY-MM-DD)'],
     ['team_code', '', 'קוד עריכה לקבוצה. ריק = כל מי שיש לו את הקישור יכול לערוך'],
-    ['gemini_model', 'gemini-2.5-flash', 'שם המודל של Gemini']
+    ['gemini_model', 'gemini-3.8-flash', 'שם המודל של Gemini. אפשר כמה, מופרדים בפסיק (הבא בתור משמש כשהראשון עמוס)']
   ]
 };
 
@@ -79,6 +79,7 @@ function doPost(e) {
       case 'query': return json_({ rows: query_(req.sheet, req.where || {}) });
       case 'batch': requireCode_(req); return json_(batch_(req.ops || []));
       case 'ai': requireCode_(req); return json_({ result: gemini_(String(req.prompt || '')) });
+      case 'upload': requireCode_(req); return json_(upload_(req));
       default: return json_({ error: 'unknown_action' });
     }
   } catch (err) {
@@ -241,28 +242,74 @@ function batch_(ops) {
   }
 }
 
+/* ---------------- images (Google Drive) ---------------- */
+
+/** Run once from the editor after updating, to grant Drive access for photo uploads. */
+function authorize() {
+  imagesFolder_();
+  Logger.log('Drive access OK');
+}
+
+function imagesFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('IMAGES_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  var folder = DriveApp.createFolder('MM לוח שבועי - תמונות');
+  props.setProperty('IMAGES_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+function upload_(req) {
+  var mime = String(req.mime || '');
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(mime)) fail_('bad_file', 'Only images are allowed');
+  var data = String(req.data || '');
+  if (!data || data.length > 14000000) fail_('bad_file', 'Image too large');
+  var name = String(req.name || 'image').replace(/[\\/:*?"<>|]/g, '').slice(0, 80) || 'image';
+  var blob = Utilities.newBlob(Utilities.base64Decode(data), mime, name);
+  var file = imagesFolder_().createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return { id: file.getId() };
+}
+
 /* ---------------- Gemini ---------------- */
 
 function gemini_(prompt) {
   var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!key) fail_('ai_disabled', 'GEMINI_API_KEY is not set');
   if (!prompt || prompt.length > 200000) fail_('bad_request', 'Prompt empty or too long');
-  var model = settings_().gemini_model || 'gemini-2.5-flash';
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-  var res = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-goog-api-key': key },
-    muteHttpExceptions: true,
-    payload: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
-    })
+  // gemini_model may list several models separated by commas: the next one is tried
+  // when a model is busy (429/503) or no longer exists (404).
+  var models = String(settings_().gemini_model || 'gemini-3.8-flash').split(',')
+    .map(function (m) { return m.trim(); }).filter(String);
+  var payload = JSON.stringify({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
   });
-  var status = res.getResponseCode();
-  if (status === 429) fail_('ai_rate_limited', 'Gemini rate limit');
-  if (status !== 200) fail_('ai_failed', 'Gemini HTTP ' + status + ': ' + res.getContentText().slice(0, 300));
-  var body = JSON.parse(res.getContentText());
+  var res = null, status = 0, lastText = '', busy = false;
+  outer:
+  for (var m = 0; m < models.length; m++) {
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(models[m]) + ':generateContent';
+    for (var attempt = 0; attempt < 3; attempt++) {
+      res = UrlFetchApp.fetch(url, {
+        method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': key },
+        muteHttpExceptions: true, payload: payload
+      });
+      status = res.getResponseCode();
+      lastText = res.getContentText();
+      if (status === 200) break outer;
+      if (status === 429 || status === 503 || status === 500) {   // busy: wait and retry
+        busy = true;
+        if (attempt < 2) Utilities.sleep(attempt === 0 ? 2000 : 6000);
+        continue;
+      }
+      break;   // 404 or other error: move to the next model
+    }
+  }
+  if (status !== 200) {
+    if (busy && (status === 429 || status === 503 || status === 500)) fail_('ai_rate_limited', 'Gemini busy: ' + lastText.slice(0, 300));
+    fail_('ai_failed', 'Gemini HTTP ' + status + ': ' + lastText.slice(0, 300));
+  }
+  var body = JSON.parse(lastText);
   var parts = (body.candidates && body.candidates[0] && body.candidates[0].content && body.candidates[0].content.parts) || [];
   var text = parts.map(function (p) { return p.text || ''; }).join('');
   return parseJsonLoose_(text);

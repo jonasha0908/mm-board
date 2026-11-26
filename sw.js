@@ -1,8 +1,8 @@
 // Service worker: makes the site installable and open fast.
 // The page itself is fetched network-first so updates on GitHub show up right away;
 // the cached copy is used only when offline. Data requests (Google) are never cached.
-const CACHE = "mm-board-v1";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const CACHE = "mm-board-v2";
+const SHELL = ["./", "./index.html", "./app.css", "./app.js", "./logo.webp", "./ometz.webp", "./hoss.webp", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
