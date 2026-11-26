@@ -264,3 +264,21 @@ textarea.big{width:100%;min-height:150px;resize:vertical;margin-top:10px;line-he
 .ioshint button{background:none;border:0;color:var(--muted);font-size:1.1rem}
 @media (display-mode:standalone){.install{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* proposal: select-all, link/owners row */
+.pall{display:flex;gap:8px;align-items:center;font-size:.85rem;color:var(--muted);margin-bottom:6px;cursor:pointer;width:max-content}
+.prow.off{opacity:.45}
+.pmeta{display:grid;grid-template-columns:22px minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.6fr);gap:8px;margin:-2px 0 10px}
+.pmeta select,.pmeta input{background:#00000033;border:1px dashed #ffffff26;border-radius:7px;padding:4px 8px;font-size:.84rem;min-width:0;color:var(--text)}
+.pmeta .hint{grid-column:2 / -1}
+.pmeta .hint.renamed{color:#ffc79f}
+.plink{color:var(--glow)}
+.plink option,.plink optgroup{background:var(--panel);color:var(--text)}
+.tag.owner{background:#ff6b0a1a;color:#ffc79f}
+.box li small.o{color:#ffc79f}
+.chip.mine{border-color:#ff6b0a66}
+.chip.mine[aria-pressed="true"]{background:var(--orange-soft);color:#ffc79f;border-color:var(--orange)}
+@media (max-width:640px){
+  .pmeta{grid-template-columns:22px 1fr}
+  .pmeta>*:not(:first-child){grid-column:2}
+}

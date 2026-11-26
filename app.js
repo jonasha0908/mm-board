@@ -80,11 +80,13 @@ async function ai(prompt){const r=await api("ai",{prompt});return r.result}
 const toBool=v=>v===true||v==="TRUE"||v==="true"||v===1;
 const okImg=x=>typeof x==="string"&&/^[\w-]{10,200}$/.test(x);
 function parseImgs(v){if(Array.isArray(v))return v.filter(okImg);if(typeof v==="string"&&v.trim().startsWith("[")){try{const a=JSON.parse(v);return Array.isArray(a)?a.filter(okImg):[]}catch(e){}}return[]}
-function parseUpdates(v){let a=v;if(typeof v==="string"&&v.trim().startsWith("[")){try{a=JSON.parse(v)}catch(e){a=[]}}return Array.isArray(a)?a.filter(u=>u&&typeof u.t==="string"&&u.t.trim()).map(u=>({d:isIso(u.d)?u.d:"",t:String(u.t).slice(0,300),by:String(u.by||"")})):[]}
-const lastUpd=t=>t.updates&&t.updates.length?t.updates[t.updates.length-1]:null;
+function parseUpdates(v){let a=v;if(typeof v==="string"&&v.trim().startsWith("[")){try{a=JSON.parse(v)}catch(e){a=[]}}return Array.isArray(a)?a.filter(u=>u&&typeof u.t==="string"&&u.t.trim()).map(u=>u.k==="rename"?{d:isIso(u.d)?u.d:"",t:String(u.t).slice(0,300),by:String(u.by||""),k:"rename"}:{d:isIso(u.d)?u.d:"",t:String(u.t).slice(0,300),by:String(u.by||"")}):[]}
+const parseOwners=v=>{let a=v;if(typeof v==="string"){const s=v.trim();if(s.startsWith("[")){try{a=JSON.parse(s)}catch(e){a=[]}}else a=s.split(/[,،]/)}return Array.isArray(a)?[...new Set(a.map(x=>String(x).trim().slice(0,30)).filter(Boolean))].slice(0,6):[]};
+const ownersStr=a=>(a||[]).join(", ");
+const lastUpd=t=>{const u=(t.updates||[]).filter(x=>x.k!=="rename");return u.length?u[u.length-1]:null};
 const imgUrl=(id,w)=>"https://drive.google.com/thumbnail?id="+encodeURIComponent(id)+"&sz=w"+(w||1600);
 function normTask(r){return{id:String(r.id),week:Number(r.week),team:String(r.team||""),title:String(r.title??""),done:toBool(r.done),source:String(r.source||"manual"),
-  addedOn:isIso(r.addedOn)?r.addedOn:null,doneOn:isIso(r.doneOn)?r.doneOn:null,carried:toBool(r.carried),carriedFrom:r.carriedFrom?String(r.carriedFrom):"",createdAt:Number(r.createdAt)||0,images:parseImgs(r.images),note:String(r.note??""),createdBy:String(r.createdBy||""),doneBy:String(r.doneBy||""),editedBy:String(r.editedBy||""),updates:parseUpdates(r.updates)}}
+  addedOn:isIso(r.addedOn)?r.addedOn:null,doneOn:isIso(r.doneOn)?r.doneOn:null,carried:toBool(r.carried),carriedFrom:r.carriedFrom?String(r.carriedFrom):"",createdAt:Number(r.createdAt)||0,images:parseImgs(r.images),note:String(r.note??""),createdBy:String(r.createdBy||""),doneBy:String(r.doneBy||""),editedBy:String(r.editedBy||""),updates:parseUpdates(r.updates),owners:parseOwners(r.owners)}}
 function normLog(r){return{id:String(r.id),week:Number(r.week),date:isIso(r.date)?r.date:iso(today()),kind:r.kind==="open"?"open":"close",team:r.team?String(r.team):"",text:String(r.text??""),createdAt:Number(r.createdAt)||0,images:parseImgs(r.images),createdBy:String(r.createdBy||""),editedBy:String(r.editedBy||"")}}
 
 /* ---------- state ---------- */
@@ -205,6 +207,7 @@ function renderChips(){
   const box=$("teamChips"); box.textContent="";
   const mk=(id,name)=>el("button",{class:"chip","aria-pressed":S.team===id?"true":"false",onclick:()=>{S.team=id;renderChips();renderTasks()}},name);
   box.append(mk("all","כל הצוותים"),...TEAMS.map(t=>mk(t.id,t.name)));
+  if(S.me) box.append(el("button",{class:"chip mine","aria-pressed":S.mine?"true":"false",onclick:()=>{S.mine=!S.mine;renderChips();renderTasks()}},"👤 המשימות שלי"));
 }
 function taskTags(t){
   const tags=[], ws=iso(weekStart(S.week));
@@ -212,7 +215,8 @@ function taskTags(t){
   else if(t.source!=="opening"&&t.addedOn&&t.addedOn>ws) tags.push(el("span",{class:"tag added",text:"נוסף ב-"+dm(parseIso(t.addedOn))+(t.createdBy?" · "+t.createdBy:"")}));
   else if(t.createdBy) tags.push(el("span",{class:"tag",text:"נוסף ע״י "+t.createdBy}));
   if(t.done&&t.doneOn) tags.push(el("span",{class:"tag",text:"בוצע ב-"+dm(parseIso(t.doneOn))+(t.doneBy?" · "+t.doneBy:"")}));
-  if(!t.done&&t.updates&&t.updates.length) tags.unshift(el("span",{class:"tag prog",text:"🔄 בתהליך"}));
+  if(!t.done&&lastUpd(t)) tags.unshift(el("span",{class:"tag prog",text:"🔄 בתהליך"}));
+  if(t.owners&&t.owners.length) tags.unshift(el("span",{class:"tag owner",text:"👤 "+ownersStr(t.owners)}));
   if(t.editedBy) tags.push(el("span",{class:"tag",text:"נערך ע״י "+t.editedBy}));
   if(!t.done&&t.carried) tags.push(el("span",{class:"tag carried",text:"הועבר לשבוע "+(t.week+1)}));
   return tags;
@@ -226,7 +230,7 @@ function renderTasks(){
   const edit=canEdit();
   const teams=S.team==="all"?TEAMS:[TEAM[S.team]].filter(Boolean);
   for(const tm of teams){
-    const list=S.tasks.filter(t=>t.team===tm.id).sort((a,b)=>(a.done-b.done)||(a.createdAt-b.createdAt));
+    const list=S.tasks.filter(t=>t.team===tm.id&&(!S.mine||(t.owners||[]).some(o=>norm(o)===norm(S.me)))).sort((a,b)=>(a.done-b.done)||(a.createdAt-b.createdAt));
     if(S.team==="all"&&!list.length&&!edit) continue;
     const done=list.filter(t=>t.done).length;
     const card=el("article",{class:"team"},el("header",null,el("h3",{text:tm.name}),el("span",{text:list.length?done+"/"+list.length+" בוצעו":""})));
@@ -241,18 +245,19 @@ function renderTasks(){
       });
       const cam=el("button",{class:"camera","aria-label":"צרף תמונה",title:"צרף תמונה",hidden:!edit,onclick:()=>attachToTask(t)},"📷");
       const prog=el("button",{class:"icon","aria-label":"עדכון התקדמות",title:"עדכון התקדמות",hidden:!edit||t.done,onclick:()=>{S.updTask={id:t.id,text:""};renderTasks();const i=$("ut-text");if(i)i.focus()}},"🔄");
-      const pen=el("button",{class:"icon","aria-label":"ערוך משימה",title:"ערוך",hidden:!edit,onclick:()=>{S.editTask={id:t.id,title:t.title,note:t.note||""};renderTasks();const i=$("et-title");if(i)i.focus()}},"✏️");
+      const pen=el("button",{class:"icon","aria-label":"ערוך משימה",title:"ערוך",hidden:!edit,onclick:()=>{S.editTask={id:t.id,title:t.title,note:t.note||"",owners:ownersStr(t.owners)};renderTasks();const i=$("et-title");if(i)i.focus()}},"✏️");
       let body;
       if(S.editTask&&S.editTask.id===t.id){
         const D=S.editTask;
         const ti=el("input",{type:"text",id:"et-title","aria-label":"כותרת המשימה"}); ti.value=D.title; ti.oninput=()=>D.title=ti.value;
         const no=el("textarea",{id:"et-note",placeholder:"הערה (לא חובה)","aria-label":"הערה"}); no.value=D.note; no.oninput=()=>D.note=no.value;
+        const ow=el("input",{type:"text",id:"et-owners",list:"people",placeholder:"👤 אחראים (שמות, מופרד בפסיק)","aria-label":"אחראים"}); ow.value=D.owners; ow.oninput=()=>D.owners=ow.value;
         ti.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();saveTaskEdit(t)}if(e.key==="Escape"){S.editTask=null;renderTasks()}});
-        body=el("div",{class:"t"},el("div",{class:"editbox"},ti,no,el("div",{class:"editbtns"},
+        body=el("div",{class:"t"},el("div",{class:"editbox"},ti,ow,no,el("div",{class:"editbtns"},
           el("button",{class:"btn primary sm",onclick:()=>saveTaskEdit(t)},"שמור"),
           el("button",{class:"btn ghost sm",onclick:()=>{S.editTask=null;renderTasks()}},"ביטול"))));
       }else{
-        const lu=lastUpd(t), older=t.updates.slice(0,t.done?t.updates.length:-1);
+        const lu=lastUpd(t), older=t.updates.filter(u=>t.done||u!==lu);
         let updBox=null;
         if(S.updTask&&S.updTask.id===t.id){
           const U=S.updTask, ui=el("input",{type:"text",id:"ut-text",placeholder:"מה התקדם? למשל: נבנה הציר, חסרה הרכבה","aria-label":"עדכון התקדמות"}); ui.value=U.text; ui.oninput=()=>U.text=ui.value;
@@ -261,7 +266,7 @@ function renderTasks(){
         }
         body=el("div",{class:"t"},el("div",{class:"title",text:t.title}),t.note?el("div",{class:"note",text:t.note}):null,
           lu&&!t.done?el("div",{class:"upd"},"🔄 "+(lu.d?dm(parseIso(lu.d))+" · ":"")+lu.t,lu.by?el("span",{class:"by",text:" · "+lu.by}):null):null,
-          older.length?el("details",{class:"hist"},el("summary",{text:(t.done?"היסטוריית ביצוע":"עדכונים קודמים")+" ("+older.length+")"}),el("ul",null,older.map(u=>el("li",{text:(u.d?dm(parseIso(u.d))+" · ":"")+u.t+(u.by?" · "+u.by:"")})))):null,
+          older.length?el("details",{class:"hist"},el("summary",{text:(t.done?"היסטוריית ביצוע":"היסטוריה")+" ("+older.length+")"}),el("ul",null,older.map(u=>el("li",{text:(u.d?dm(parseIso(u.d))+" · ":"")+(u.k==="rename"?"✏️ שם קודם: ":"")+u.t+(u.by?" · "+u.by:"")})))):null,
           updBox,el("div",{class:"tags"},taskTags(t)),driveThumbs(t.images,edit?(id=>removeFromTask(t,id)):null));
       }
       card.append(el("div",{class:"task"+(t.done?" done":"")},chk,body,el("div",{class:"tact"},prog,cam,pen,del)));
@@ -290,11 +295,11 @@ async function saveProgress(t){
 }
 async function saveTaskEdit(t){
   const D=S.editTask; if(!D||!guard()) return;
-  const title=D.title.trim().slice(0,300), note=D.note.trim().slice(0,2000);
+  const title=D.title.trim().slice(0,300), note=D.note.trim().slice(0,2000), owners=parseOwners(D.owners);
   if(!title){toast("הכותרת לא יכולה להיות ריקה");return}
-  const prev={title:t.title,note:t.note};
-  t.title=title; t.note=note; S.editTask=null; renderData();
-  try{await run(()=>batch([{op:"update",sheet:"tasks",id:t.id,fields:{title,note,editedBy:S.me}}]));t.editedBy=S.me;toast("המשימה עודכנה")}
+  const prev={title:t.title,note:t.note,owners:t.owners};
+  t.title=title; t.note=note; t.owners=owners; S.editTask=null; renderData();
+  try{await run(()=>batch([{op:"update",sheet:"tasks",id:t.id,fields:{title,note,owners,editedBy:S.me}}]));t.editedBy=S.me;toast("המשימה עודכנה")}
   catch(e){Object.assign(t,prev);renderData();writeErr(e)}
   refresh();
 }
@@ -380,7 +385,14 @@ async function loadWeek(silent){
   }catch(e){ if(!silent) setStatus("לא הצלחתי לטעון את הנתונים. בדקו את החיבור ורעננו את הדף."); }
 }
 const refresh=()=>{S.sig="";return loadWeek(true)};
-function renderData(){renderHead(); if(S.tab==="tasks")renderTasks(); if(S.tab==="logs")renderLogs(); if(S.tab==="summary")renderDeck()}
+function refreshPeople(){
+  let dl=$("people"); if(!dl){dl=el("datalist",{id:"people"});document.body.append(dl)}
+  const names=new Set(); if(S.me) names.add(S.me);
+  for(const t of S.tasks){(t.owners||[]).forEach(n=>names.add(n)); if(t.createdBy) names.add(t.createdBy); if(t.doneBy) names.add(t.doneBy)}
+  for(const l of S.logs) if(l.createdBy) names.add(l.createdBy);
+  dl.textContent=""; [...names].sort().forEach(n=>dl.append(el("option",{value:n})));
+}
+function renderData(){refreshPeople();renderHead(); if(S.tab==="tasks")renderTasks(); if(S.tab==="logs")renderLogs(); if(S.tab==="summary")renderDeck()}
 
 /* ---------- writes ---------- */
 function guard(){
@@ -461,37 +473,76 @@ function renderPanel(){
     seg,input,attach,
     el("div",{class:"actions"},
       el("button",{class:"btn primary",disabled:P.working,onclick:runAnalyze},P.working&&!P.proposal?"מנתח…":"נתח והצע עדכונים"),
+      P.proposal?null:el("button",{class:"btn",disabled:P.working,onclick:saveSummaryOnly},"שמור רק סיכום"),
       el("button",{class:"btn ghost",onclick:closePanel},"ביטול"),
       el("span",{class:"hint",text:S.ai?"Gemini מפרק את הסיכום למשימות ומזהה מה מהמשימות הקיימות בוצע. אתם מאשרים לפני שמירה.":"ה-AI לא מחובר, הניתוח ייעשה לפי הכותרות \"נעשה\" ו\"צריך לעשות\"."})),
     P.error?el("div",{class:"err",text:P.error}):null,
     P.proposal?renderProposal():null));
 }
+const PKINDS={complete:"סמן ✓ בוצע",update:"עדכון משימה",new_done:"בוצע",new_progress:"בתהליך",new_todo:"משימה חדשה"};
+// tasks a proposal row can be linked to: open tasks of this week + open (not carried) tasks of the previous week
+function linkCands(P){return [...(P.existing||[]).filter(t=>!t.done),...(P.prevOpen||[])]}
+function findCand(P,id){return linkCands(P).find(t=>t.id===id)||(P.existing||[]).find(t=>t.id===id)||null}
+function linkItem(it,t){
+  if(t){
+    it.taskId=t.id; it.team=t.team; it.text=t.title; it.origTitle=t.title;
+    if(!it.owners||!it.owners.length) it.owners=[...(t.owners||[])];
+    if(it.kind==="new_done") it.kind="complete"; else if(it.kind!=="complete"&&it.kind!=="update") it.kind="update";
+  }else{
+    it.taskId=null; it.origTitle="";
+    if(it.kind==="complete") it.kind="new_done"; else if(it.kind==="update") it.kind="new_progress";
+  }
+}
 function renderProposal(){
   const P=S.panel, wrap=el("div",{class:"prop"});
-  if(!P.proposal.length) wrap.append(el("div",{class:"hint",text:"לא נמצאו משימות בטקסט. אפשר לשמור את הסיכום בכל זאת."}));
-  const kinds={complete:"סמן ✓ בוצע",update:"עדכון משימה",new_done:"בוצע",new_progress:"בתהליך",new_todo:"משימה חדשה"};
+  const cands=linkCands(P), w=weekOf(parseIso(P.date));
+  if(P.proposal.length){
+    const n=P.proposal.filter(x=>x.include).length;
+    const all=el("input",{type:"checkbox",id:"p-all"});
+    all.checked=n===P.proposal.length; all.indeterminate=n>0&&n<P.proposal.length;
+    all.onchange=()=>{P.proposal.forEach(x=>x.include=all.checked);renderPanel()};
+    wrap.append(el("label",{class:"pall"},all,el("span",{text:"בחר הכל ("+n+"/"+P.proposal.length+" נבחרו)"})));
+  }else wrap.append(el("div",{class:"hint",text:"לא נמצאו משימות בטקסט. אפשר לשמור רק את הסיכום."}));
   P.proposal.forEach(it=>{
-    const cb=el("input",{type:"checkbox","aria-label":"כלול"}); cb.checked=it.include; cb.onchange=()=>it.include=cb.checked;
+    const cb=el("input",{type:"checkbox","aria-label":"כלול"}); cb.checked=it.include; cb.onchange=()=>{it.include=cb.checked;renderPanel()};
     const sel=el("select",{"aria-label":"צוות"},...TEAMS.map(t=>el("option",{value:t.id,text:t.name}))); sel.value=it.team; sel.onchange=()=>it.team=sel.value;
-    const txt=el("input",{type:"text",value:it.text,"aria-label":"תיאור"}); txt.oninput=()=>it.text=txt.value;
-    if(it.taskId){sel.disabled=true;txt.readOnly=true}
+    if(it.taskId) sel.disabled=true;
+    const txt=el("input",{type:"text",value:it.text,"aria-label":"שם המשימה"});
+    txt.onchange=()=>{it.text=txt.value;renderPanel()}; txt.oninput=()=>it.text=txt.value;
     const opts=it.taskId?["complete","update"]:["new_done","new_progress","new_todo"];
-    const kindEl=el("select",{class:"kind-sel "+it.kind,"aria-label":"סטטוס"},opts.map(k=>el("option",{value:k,text:kinds[k]})));
+    const kindEl=el("select",{class:"kind-sel "+it.kind,"aria-label":"סטטוס"},opts.map(k=>el("option",{value:k,text:PKINDS[k]})));
     kindEl.value=it.kind; kindEl.onchange=()=>{it.kind=kindEl.value;renderPanel()};
     const cam=el("button",{class:"camera",type:"button","aria-label":"צרף תמונה למשימה",title:"צרף תמונה למשימה",
       onclick:()=>pickFiles(async fs=>{it.images=it.images||[];for(const f of fs){try{it.images.push(await shrink(f))}catch(e){}}renderPanel()})},"📷");
-    wrap.append(el("div",{class:"prow"},cb,kindEl,sel,txt,cam));
+    wrap.append(el("div",{class:"prow"+(it.include?"":" off")},cb,kindEl,sel,txt,cam));
+    // second line: link to an existing task, owners, progress note
+    const link=el("select",{class:"plink","aria-label":"קשר למשימה קיימת"},el("option",{value:"",text:"➕ משימה חדשה (לא מקושרת)"}),
+      TEAMS.map(tm=>{const ts=cands.filter(t=>t.team===tm.id);return ts.length?el("optgroup",{label:tm.name},ts.map(t=>el("option",{value:t.id,text:"🔗 "+t.title+(t.week!==w?" · משבוע "+t.week:"")}))):null}).filter(Boolean));
+    link.value=it.taskId||""; link.onchange=()=>{linkItem(it,link.value?findCand(P,link.value):null);renderPanel()};
+    const own=el("input",{type:"text",list:"people",placeholder:"👤 אחראים (מופרד בפסיק)","aria-label":"אחראים"}); own.value=ownersStr(it.owners); own.oninput=()=>it.owners=parseOwners(own.value);
+    const meta=[el("span"),link,own];
     if(it.kind==="update"||it.kind==="new_progress"){
       const ni=el("input",{type:"text",placeholder:"מה המצב? למשל: נבנה הציר, חסרה הרכבה","aria-label":"מצב המשימה"}); ni.value=it.note||""; ni.oninput=()=>it.note=ni.value;
-      wrap.append(el("div",{class:"pnote"},ni));
+      meta.push(ni);
     }
+    wrap.append(el("div",{class:"pmeta"},meta));
+    if(it.taskId&&it.origTitle&&norm(it.text)!==norm(it.origTitle))
+      wrap.append(el("div",{class:"pmeta"},el("span"),el("div",{class:"hint renamed",text:"✏️ שם המשימה ישתנה. השם הקודם יישמר בהיסטוריה: "+it.origTitle})));
+    else if(it.taskId){const t=findCand(P,it.taskId); if(t&&t.week!==w) wrap.append(el("div",{class:"pmeta"},el("span"),el("div",{class:"hint",text:"↩ המשימה משבוע "+t.week+" תועבר לשבוע "+w+" עם כל ההיסטוריה שלה."})))}
     if(it.images&&it.images.length) wrap.append(el("div",{class:"pnote"},el("div",{class:"thumbs",style:"grid-column:2;margin:0"},
       it.images.map((im,i)=>thumbEl(im.preview,im.preview,()=>{it.images.splice(i,1);renderPanel()})))));
   });
   wrap.append(el("div",{class:"actions"},
     el("button",{class:"btn primary",onclick:applyProposal,disabled:P.working},P.working?(P.progress||"שומר…"):"שמור סיכום ועדכן משימות"),
-    el("span",{class:"hint",text:"המשימות יישמרו בשבוע "+weekOf(parseIso(P.date))+"."})));
+    el("button",{class:"btn ghost",onclick:saveSummaryOnly,disabled:P.working},"שמור רק את הסיכום"),
+    el("span",{class:"hint",text:"המשימות יישמרו בשבוע "+w+"."})));
   return wrap;
+}
+function saveSummaryOnly(){
+  const P=S.panel; if(!P) return;
+  if(!P.proposal) P.proposal=[];
+  P.proposal.forEach(x=>x.include=false);
+  applyProposal();
 }
 function composedText(P){
   if(P.mode==="paste") return P.text.trim();
@@ -524,27 +575,28 @@ function heuristicParse(P,existing){
   const out=[], open=existing.filter(t=>!t.done);
   for(const d of done){
     const m=open.find(t=>norm(t.title)===norm(d)||norm(t.title).includes(norm(d))||norm(d).includes(norm(t.title)));
-    if(m) out.push({kind:"complete",taskId:m.id,team:m.team,text:m.title,include:true});
-    else out.push({kind:"new_done",team:fallbackTeam,text:d,include:true});
+    if(m) out.push({kind:"complete",taskId:m.id,team:m.team,text:m.title,origTitle:m.title,owners:[...(m.owners||[])],include:true});
+    else out.push({kind:"new_done",team:fallbackTeam,text:d,owners:[],include:true});
   }
-  for(const d of todo){ if(!existing.some(t=>norm(t.title)===norm(d))) out.push({kind:"new_todo",team:fallbackTeam,text:d,include:true}) }
+  for(const d of todo){ if(!existing.some(t=>norm(t.title)===norm(d))) out.push({kind:"new_todo",team:fallbackTeam,text:d,owners:[],include:true}) }
   return out;
 }
 async function tasksOfWeek(w){
   if(w===S.week) return S.tasks;
   const r=await api("query",{sheet:"tasks",where:{week:w}}); return r.rows.map(normTask);
 }
-function parsePrompt(P,w,text,existing){
+function parsePrompt(P,w,text,existing,prevOpen){
   const teamsTxt=TEAMS.map(t=>t.id+": "+t.name).join("\n");
-  const exTxt=existing.length?existing.map(t=>{const u=lastUpd(t);return t.id+" | "+t.team+" | "+(t.done?"בוצע":(u?"בתהליך":"פתוח"))+" | "+t.title+(u&&!t.done?" (מצב אחרון: "+u.t+")":"")}).join("\n"):"(אין)";
+  const row=(t,prev)=>{const u=lastUpd(t);return t.id+" | "+t.team+" | "+(t.done?"בוצע":(u?"בתהליך":"פתוח"))+" | "+t.title+(u&&!t.done?" (מצב אחרון: "+u.t+")":"")+(t.owners&&t.owners.length?" (אחראים: "+ownersStr(t.owners)+")":"")+(prev?" (משבוע קודם)":"")};
+  const all=[...existing.map(t=>row(t,false)),...prevOpen.map(t=>row(t,true))];
   return `אתה עוזר לנהל משימות של קבוצת רובוטיקה FTC (קבוצת MM).
 קיבלת סיכום ${P.kind==="open"?"פתיחה":"סגירה"} מיום ${P.date} (שבוע ${w} בעונה).
 צוותים (id: שם):
 ${teamsTxt}
 ${P.team!=="auto"?"הסיכום שייך לצוות: "+P.team+" (אלא אם הטקסט אומר במפורש צוות אחר).":"זהה לכל פריט את הצוות לפי הטקסט (למשל כותרת \"צוות מכניקה\"). אם לא ברור, השתמש ב-"+TEAMS[0].id+"."}
 
-משימות שכבר קיימות בשבוע הזה (id | צוות | סטטוס | כותרת):
-${exTxt}
+משימות קיימות (id | צוות | סטטוס | כותרת):
+${all.length?all.join("\n"):"(אין)"}
 
 הסיכום:
 """
@@ -552,14 +604,17 @@ ${text.slice(0,12000)}
 """
 
 החזר רק JSON בצורה:
-{"items":[{"action":"complete","taskId":"<id מהרשימה>","team":"<team id>","text":"<כותרת המשימה>"},{"action":"update","taskId":"<id מהרשימה>","team":"<team id>","text":"<כותרת המשימה>","note":"<מה נעשה ומה חסר>"},{"action":"new_done","team":"<team id>","text":"..."},{"action":"new_progress","team":"<team id>","text":"<שם המשימה>","note":"<מה נעשה ומה חסר>"},{"action":"new_todo","team":"<team id>","text":"..."}]}
+{"items":[{"action":"complete","taskId":"<id>","team":"<team id>","text":"<כותרת>","newTitle":"<רק אם צריך לשנות שם>","owners":["<שם>"]},{"action":"update","taskId":"<id>","team":"<team id>","text":"<כותרת>","newTitle":"<רק אם צריך>","note":"<מה נעשה ומה חסר>","owners":["<שם>"]},{"action":"new_done","team":"<team id>","text":"...","owners":[]},{"action":"new_progress","team":"<team id>","text":"<שם המשימה>","note":"<מה נעשה ומה חסר>","owners":[]},{"action":"new_todo","team":"<team id>","text":"...","owners":[]}]}
 כללים:
-- complete: משימה קיימת ופתוחה שהסיכום מדווח שבוצעה (גם אם הניסוח שונה). השתמש ב-taskId המדויק מהרשימה.
-- new_done: דבר שבוצע ואין לו משימה קיימת.
-- new_todo: משהו שעוד צריך לעשות ושאינו קיים ברשימה (גם לא בניסוח אחר), ועוד לא התחילו בו.
+- חשוב מאוד: לפני שאתה יוצר פריט חדש, בדוק אם הוא בעצם המשך של משימה קיימת ברשימה (כולל משימות "משבוע קודם"), גם אם הניסוח שונה או שהמשימה עברה לשלב הבא. אם כן, השתמש ב-complete או update עם ה-taskId שלה. אל תיצור כפילויות.
+- complete: משימה קיימת ופתוחה שהסיכום מדווח שהושלמה.
 - update: משימה קיימת ופתוחה שהתקדמו בה אבל היא עוד לא הושלמה. ב-note כתוב בקצרה מה נעשה ומה חסר (למשל "נבנה הציר, חסרה הרכבה").
-- new_progress: עבודה שהתחילו ולא סיימו ואין לה משימה קיימת. text = שם המשימה הכללי (למשל "מנגנון איסוף"), note = מה נעשה ומה חסר.
+- newTitle: רק ב-complete או update, כשהסיכום מראה שהמשימה עברה לשלב אחר ושם המשימה הנוכחי כבר לא מתאר אותה (למשל "בניית גיאומטריה דו-ממדית" ← "תחילת גיאומטריה תלת-ממדית"). אחרת השמט.
+- new_done: דבר שהושלם ואין לו משימה קיימת.
+- new_progress: עבודה שהתחילו ולא סיימו ואין לה משימה קיימת. text = שם המשימה הכללי, note = מה נעשה ומה חסר.
+- new_todo: משהו שעוד צריך לעשות, לא התחילו בו, ואין לו משימה קיימת.
 - complete או new_done רק כשהטקסט אומר שהדבר הושלם לגמרי. "התחלנו", "בתהליך", "חלקית", "חסר" = update או new_progress.
+- owners: שמות האנשים שהטקסט אומר שעבדו על הפריט או אחראים עליו. אם אין שמות, השאר ריק.
 - נסח כל פריט כמשימה קצרה וברורה בעברית (עד כ-8 מילים), שמור מונחים טכניים ושמות רכיבים.
 - אל תמציא פריטים שלא מופיעים בטקסט, ואל תחזיר פריטים כפולים.`;
 }
@@ -570,20 +625,28 @@ async function runAnalyze(){
   if(!isIso(P.date)){P.error="בחרו תאריך.";renderPanel();return}
   P.working=true; P.proposal=null; renderPanel();
   const w=weekOf(parseIso(P.date));
-  let existing=[]; try{existing=await tasksOfWeek(w)}catch(e){}
+  let existing=[], prevOpen=[];
+  try{existing=await tasksOfWeek(w)}catch(e){}
+  if(w>1){try{prevOpen=(await tasksOfWeek(w-1)).filter(t=>!t.done&&!t.carried)}catch(e){}}
+  P.existing=existing; P.prevOpen=prevOpen;
   let proposal=null;
   if(S.ai){
     try{
-      const res=await run(()=>ai(parsePrompt(P,w,text,existing)));
+      const res=await run(()=>ai(parsePrompt(P,w,text,existing,prevOpen)));
       const items=Array.isArray(res&&res.items)?res.items:[];
-      const open=new Map(existing.filter(t=>!t.done).map(t=>[t.id,t]));
+      const open=new Map(linkCands(P).map(t=>[t.id,t]));
       const def=P.team!=="auto"?P.team:TEAMS[0].id;
+      const used=new Set();
       proposal=[];
       for(const it of items){
         const team=TEAM[it.team]?it.team:def, txt=String(it.text||"").trim();
-        const note=String(it.note||"").trim().slice(0,300);
-        if((it.action==="complete"||it.action==="update")&&open.has(String(it.taskId))){const t=open.get(String(it.taskId));proposal.push({kind:it.action,taskId:t.id,team:t.team,text:t.title,note,include:true})}
-        else if((it.action==="new_done"||it.action==="new_todo"||it.action==="new_progress")&&txt) proposal.push({kind:it.action,team,text:txt.slice(0,300),note,include:true});
+        const note=String(it.note||"").trim().slice(0,300), owners=parseOwners(it.owners);
+        if((it.action==="complete"||it.action==="update")&&open.has(String(it.taskId))&&!used.has(String(it.taskId))){
+          const t=open.get(String(it.taskId)); used.add(t.id);
+          const nt=String(it.newTitle||"").trim().slice(0,300);
+          proposal.push({kind:it.action,taskId:t.id,team:t.team,text:nt||t.title,origTitle:t.title,note,owners:owners.length?owners:[...(t.owners||[])],include:true});
+        }
+        else if((it.action==="new_done"||it.action==="new_todo"||it.action==="new_progress")&&txt) proposal.push({kind:it.action,team,text:txt.slice(0,300),note,owners,include:true});
       }
     }catch(e){
       if(e&&e.code==="bad_code"){P.working=false;closePanel();writeErr(e);return}
@@ -591,11 +654,13 @@ async function runAnalyze(){
       proposal=null;
     }
   }
-  if(!proposal) proposal=heuristicParse(P,existing);
-  P.proposal=proposal; P.existing=existing; P.working=false; renderPanel();
+  if(!proposal) proposal=heuristicParse(P,[...existing,...prevOpen]);
+  P.proposal=proposal; P.working=false; refreshPeople(); renderPanel();
 }
 async function applyProposal(){
   const P=S.panel; if(!P||!guard()) return;
+  if(!P.proposal) P.proposal=[];
+  if(!composedText(P)&&!P.images.length&&!P.proposal.some(x=>x.include)){toast("אין מה לשמור. כתבו סיכום או צרפו תמונה.");return}
   P.working=true; P.progress=""; renderPanel();
   const imgIds=[];
   const rowImgs=P.proposal.filter(it=>it.include&&it.images&&it.images.length);
@@ -608,25 +673,39 @@ async function applyProposal(){
   P.progress="שומר…"; renderPanel();
   const w=weekOf(parseIso(P.date)), src=P.kind==="open"?"opening":"daily", now=Date.now();
   const ops=[{op:"insert",sheet:"logs",row:{id:uid("l"),week:w,date:P.date,kind:P.kind,team:P.team==="auto"?"":P.team,text:composedText(P).slice(0,20000),createdAt:now,images:imgIds,createdBy:S.me}}];
+  const touched=new Set();
   P.proposal.forEach((it,i)=>{
     if(!it.include||!String(it.text).trim()) return;
-    const upd=String(it.note||"").trim().slice(0,300);
-    const ex=it.taskId?(P.existing||[]).find(t=>t.id===it.taskId):null, ri=it.imgIds||[];
-    const withImgs=f=>{if(ri.length)f.images=[...(ex?ex.images:[]),...ri];return f};
-    if(it.kind==="complete") ops.push({op:"update",sheet:"tasks",id:it.taskId,fields:withImgs({done:true,doneOn:P.date,doneBy:S.me})});
-    else if(it.kind==="update"){
-      if(!upd&&!ri.length) return;
-      const f={}; if(upd) f.updates=[...(ex?ex.updates:[]),{d:P.date,t:upd,by:S.me}];
-      ops.push({op:"update",sheet:"tasks",id:it.taskId,fields:withImgs(f)});
+    const upd=String(it.note||"").trim().slice(0,300), ri=it.imgIds||[], owners=parseOwners(it.owners);
+    if(it.taskId){
+      const ex=findCand(P,it.taskId); if(!ex||touched.has(ex.id)) return; touched.add(ex.id);
+      const title=String(it.text).trim().slice(0,300), renamed=norm(title)!==norm(ex.title);
+      const updates=[...ex.updates];
+      if(renamed) updates.push({d:P.date,t:ex.title,by:S.me,k:"rename"});
+      if(it.kind==="update"&&upd) updates.push({d:P.date,t:upd,by:S.me});
+      const f={};
+      if(renamed) f.title=title;
+      if(updates.length!==ex.updates.length) f.updates=updates;
+      if(ri.length) f.images=[...ex.images,...ri];
+      if(owners.length&&ownersStr(owners)!==ownersStr(ex.owners)) f.owners=owners;
+      if(it.kind==="complete") Object.assign(f,{done:true,doneOn:P.date,doneBy:S.me});
+      if(ex.week!==w){
+        // linked to an open task from an earlier week: carry it into this week with its history
+        ops.push({op:"insert",sheet:"tasks",row:{id:uid("t"),week:w,team:ex.team,title:f.title||ex.title,note:ex.note||"",done:!!f.done,source:"carried",
+          addedOn:iso(weekStart(w)),doneOn:f.doneOn||"",doneBy:f.doneBy||"",carried:false,carriedFrom:ex.id,createdAt:now+i,createdBy:ex.createdBy||S.me,
+          updates:f.updates||ex.updates,images:f.images||ex.images,owners:f.owners||ex.owners}});
+        ops.push({op:"update",sheet:"tasks",id:ex.id,fields:{carried:true}});
+      }else if(Object.keys(f).length) ops.push({op:"update",sheet:"tasks",id:ex.id,fields:f});
+      return;
     }
-    else ops.push({op:"insert",sheet:"tasks",row:{id:uid("t"),week:w,team:it.team,title:String(it.text).trim().slice(0,300),done:it.kind==="new_done",
+    ops.push({op:"insert",sheet:"tasks",row:{id:uid("t"),week:w,team:it.team,title:String(it.text).trim().slice(0,300),done:it.kind==="new_done",
       source:it.kind==="new_done"?"daily":src,addedOn:P.date,doneOn:it.kind==="new_done"?P.date:"",carried:false,carriedFrom:"",createdAt:now+i,createdBy:S.me,doneBy:it.kind==="new_done"?S.me:"",
-      updates:it.kind==="new_progress"&&upd?[{d:P.date,t:upd,by:S.me}]:[],images:ri}});
+      updates:it.kind==="new_progress"&&upd?[{d:P.date,t:upd,by:S.me}]:[],images:ri,owners}});
   });
   try{
     await run(()=>batch(ops));
-    const n=ops.length-1;
-    closePanel(); toast("הסיכום נשמר · "+n+" עדכונים");
+    const n=P.proposal.filter(x=>x.include).length;
+    closePanel(); toast(n?"הסיכום נשמר · "+n+" עדכונים":"הסיכום נשמר");
     if(w!==S.week) location.hash="w"+w; else refresh();
   }catch(e){P.working=false;renderPanel();writeErr(e)}
 }
@@ -636,7 +715,7 @@ function teamStats(teamId){
   const list=S.tasks.filter(t=>t.team===teamId), ws=iso(weekStart(S.week));
   return {list,done:list.filter(t=>t.done),open:list.filter(t=>!t.done),
     added:list.filter(t=>t.source!=="opening"&&t.source!=="carried"&&t.addedOn&&t.addedOn>ws),
-    progress:list.filter(t=>!t.done&&t.updates&&t.updates.length)};
+    progress:list.filter(t=>!t.done&&lastUpd(t))};
 }
 function slideShell(...kids){
   return el("div",{class:"slide"},el("img",{class:"s-logo",src:LOGO,alt:""}),el("div",{class:"s-body"},kids),
@@ -676,7 +755,7 @@ function renderDeck(){
     const x=teamStats(t.id);
     const tai=ai&&Array.isArray(ai.teams)?ai.teams.find(z=>z.teamId===t.id):null;
     const addedIds=new Set(x.added.map(a=>a.id));
-    const li=task=>{const u=!task.done&&lastUpd(task);return el("li",null,task.title,u?el("small",{class:"p",text:"  · 🔄 "+u.t}):null,addedIds.has(task.id)?el("small",{text:"  · נוסף במהלך השבוע"}):null)};
+    const li=task=>{const u=!task.done&&lastUpd(task);return el("li",null,task.title,task.owners&&task.owners.length?el("small",{class:"o",text:"  · "+ownersStr(task.owners)}):null,u?el("small",{class:"p",text:"  · 🔄 "+u.t}):null,addedIds.has(task.id)?el("small",{text:"  · נוסף במהלך השבוע"}):null)};
     const right=el("div",{class:"box"},el("h4",{text:"בוצע ✓"}),el("ul",null,x.done.length?x.done.map(li):el("li",{text:"—"})));
     const leftKids=[el("h4",{text:"נשאר פתוח"}),el("ul",null,x.open.length?x.open.map(li):el("li",{text:"הכל בוצע"}))];
     if(tai&&Array.isArray(tai.nextWeek)&&tai.nextWeek.length) leftKids.push(el("h4",{text:"פוקוס לשבוע הבא",style:"margin-top:1.2cqw"}),el("ul",null,tai.nextWeek.slice(0,4).map(v=>el("li",{text:String(v)}))));
@@ -705,7 +784,7 @@ async function generateSummary(){
   const teamsTxt=TEAMS.map(t=>{
     const x=teamStats(t.id); if(!x.list.length) return null;
     const addedIds=new Set(x.added.map(a=>a.id));
-    return "## "+t.id+" ("+t.name+")\nבוצע:\n"+(x.done.map(z=>"- "+z.title+(addedIds.has(z.id)?" [נוסף במהלך השבוע]":"")).join("\n")||"- אין")+"\nפתוח:\n"+(x.open.map(z=>{const u=lastUpd(z);return "- "+z.title+(u?" [בתהליך: "+u.t+"]":"")}).join("\n")||"- אין");
+    return "## "+t.id+" ("+t.name+")\nבוצע:\n"+(x.done.map(z=>"- "+z.title+(z.owners&&z.owners.length?" (אחראים: "+ownersStr(z.owners)+")":"")+(addedIds.has(z.id)?" [נוסף במהלך השבוע]":"")).join("\n")||"- אין")+"\nפתוח:\n"+(x.open.map(z=>{const u=lastUpd(z);return "- "+z.title+(z.owners&&z.owners.length?" (אחראים: "+ownersStr(z.owners)+")":"")+(u?" [בתהליך: "+u.t+"]":"")}).join("\n")||"- אין");
   }).filter(Boolean).join("\n\n");
   const logsTxt=[...S.logs].sort((a,b)=>a.date.localeCompare(b.date)).map(l=>"["+l.date+" "+(l.kind==="open"?"פתיחה":"סגירה")+(l.team?" "+l.team:"")+"]\n"+l.text.slice(0,1500)).join("\n\n").slice(0,30000);
   const prompt=`אתה כותב את סיכום השבוע של קבוצת הרובוטיקה FTC "MM" (מרכז חוסידמן, אוניברסיטת בן-גוריון). הסיכום יוצג בשקפים בעברית.
@@ -785,7 +864,8 @@ function summaryText(){
     out.push("","*"+t.name+"* ("+x.done.length+"/"+x.list.length+")");
     const tai=ai&&ai.teams?ai.teams.find(z=>z.teamId===t.id):null;
     if(tai&&tai.summary) out.push(tai.summary);
-    x.done.forEach(z=>out.push("✅ "+z.title)); x.open.forEach(z=>{const u=lastUpd(z);out.push((u?"🔄 ":"⬜ ")+z.title+(u?" — "+u.t:""))});
+    const ow=z=>z.owners&&z.owners.length?" ("+ownersStr(z.owners)+")":"";
+    x.done.forEach(z=>out.push("✅ "+z.title+ow(z))); x.open.forEach(z=>{const u=lastUpd(z);out.push((u?"🔄 ":"⬜ ")+z.title+ow(z)+(u?" — "+u.t:""))});
   }
   if(ai&&ai.focusNextWeek&&ai.focusNextWeek.length){out.push("","*פוקוס לשבוע הבא*");ai.focusNextWeek.forEach(f=>out.push("• "+f))}
   return out.join("\n");
@@ -801,7 +881,7 @@ async function carryOver(){
   const open=S.tasks.filter(t=>!t.done&&!t.carried), now=Date.now();
   const ops=[];
   open.forEach((t,i)=>{
-    ops.push({op:"insert",sheet:"tasks",row:{id:uid("t"),week:S.week+1,team:t.team,title:t.title,done:false,source:"carried",addedOn:iso(weekStart(S.week+1)),doneOn:"",carried:false,carriedFrom:t.id,createdAt:now+i,createdBy:S.me,updates:t.updates}});
+    ops.push({op:"insert",sheet:"tasks",row:{id:uid("t"),week:S.week+1,team:t.team,title:t.title,done:false,source:"carried",addedOn:iso(weekStart(S.week+1)),doneOn:"",carried:false,carriedFrom:t.id,createdAt:now+i,createdBy:S.me,updates:t.updates,owners:t.owners,note:t.note||""}});
     ops.push({op:"update",sheet:"tasks",id:t.id,fields:{carried:true}});
   });
   try{await run(()=>batch(ops));toast(open.length+" משימות הועברו לשבוע "+(S.week+1));refresh()}

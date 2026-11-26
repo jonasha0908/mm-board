@@ -14,6 +14,10 @@
 - **שבועות:** האתר מחולק לשבועות (Week 1, Week 2…). Week 1 מתחיל ביום ראשון 13.9.2026, שבוע עבודה הוא ראשון עד חמישי.
 - **משימות:** לכל צוות יש משימות שמסמנים ✓ כשהן בוצעו. משימה יכולה להיות גם **בתהליך**, עם עדכוני התקדמות.
 - **סיכום יומי:** מדביקים או כותבים סיכום, Gemini מפרק אותו להצעות (בוצע / בתהליך / משימה חדשה / עדכון משימה קיימת), והמשתמש מאשר לפני שמירה.
+  - כל הצעה אפשר לקשר ידנית או אוטומטית למשימה קיימת, גם משבוע קודם. במקרה כזה המשימה מועברת לשבוע הנוכחי עם ההיסטוריה שלה.
+  - אפשר לשנות לה את השם, והשם הקודם נשמר בהיסטוריה.
+  - אפשר גם לשמור רק את הסיכום, בלי לגעת במשימות.
+- **אחראים:** לכל משימה אפשר לרשום אחראים, ויש מסנן "המשימות שלי".
 - **סיכום שבוע:** מוצג כשקפים בעיצוב של הקבוצה. Gemini כותב את הטקסטים, ואפשר לערוך אותם ידנית.
 - **עוד:** תמונות (נשמרות ב־Google Drive), רישום מי עשה כל פעולה (שם שנשמר בכל מכשיר), התקנה כאפליקציה בטלפון.
 
@@ -65,7 +69,7 @@ Google Sheet (לשוניות: tasks, logs, summaries, teams, events, settings)
 | logs view | הסיכומים היומיים, כולל עריכה ומחיקה |
 | loading | `loadWeek()` טוען את השבוע הנבחר. יש **רענון אוטומטי כל 20 שניות**, שמדולג בזמן עריכה |
 | writes | `guard()` (בודק קוד קבוצה ושם לפני כתיבה), הוספה, סימון ומחיקה של משימה |
-| daily summary panel | הטופס של "+ סיכום יומי": `parsePrompt()` (ה־prompt ל־Gemini), `heuristicParse()` (גיבוי בלי AI), `applyProposal()` |
+| daily summary panel | הטופס של "+ סיכום יומי": `renderProposal()` (רשימת ההצעות, כולל קישור ואחראים), `linkCands()`/`linkItem()` (קישור למשימות קיימות), `parsePrompt()` (ה־prompt ל־Gemini), `heuristicParse()` (גיבוי בלי AI), `applyProposal()` (שמירה, כולל העברה משבוע קודם ושינוי שם), `saveSummaryOnly()` |
 | weekly summary (slides) | `renderDeck()` בונה את השקפים, `generateSummary()` (prompt לסיכום השבוע), עריכה ידנית, העתקה לוואטסאפ, העברת משימות פתוחות |
 | tabs, wiring, boot | טאבים, חיבור כפתורים, טעינה ראשונית (`config`) |
 | install as app | כפתור התקנה, הודעה לאייפון, רישום service worker |
@@ -75,7 +79,7 @@ Google Sheet (לשוניות: tasks, logs, summaries, teams, events, settings)
 כל לשונית היא טבלה. השורה הראשונה היא כותרות העמודות. **עמודות חדשות נוצרות לבד**: אם `app.js` כותב שדה שלא קיים, `Code.gs` מוסיף עמודה. מערכים ואובייקטים נשמרים כ־JSON בתא.
 
 **`tasks`** (משימה):
-`id`, `week`, `team` (id של צוות), `title`, `done` (TRUE/FALSE), `source` (`opening` / `daily` / `manual` / `carried`), `addedOn`, `doneOn` (YYYY-MM-DD), `carried`, `carriedFrom`, `createdAt` (ms), `note`, `images` (JSON של מזהי Drive), `updates` (JSON: `[{d:"2026-11-25", t:"נבנה הציר, חסרה הרכבה", by:"יונתן"}]`), `createdBy`, `doneBy`, `editedBy`
+`id`, `week`, `team` (id של צוות), `title`, `done` (TRUE/FALSE), `source` (`opening` / `daily` / `manual` / `carried`), `addedOn`, `doneOn` (YYYY-MM-DD), `carried`, `carriedFrom`, `createdAt` (ms), `note`, `images` (JSON של מזהי Drive), `updates` (JSON: `[{d:"2026-11-25", t:"נבנה הציר, חסרה הרכבה", by:"יונתן"}]`. רשומה עם `k:"rename"` שומרת שם קודם של המשימה, ולא נחשבת עדכון התקדמות), `owners` (JSON של שמות האחראים), `createdBy`, `doneBy`, `editedBy`
 
 **`logs`** (סיכום יומי):
 `id`, `week`, `date`, `kind` (`open` / `close`), `team` (ריק = כמה צוותים), `text`, `createdAt`, `images`, `createdBy`, `editedBy`
