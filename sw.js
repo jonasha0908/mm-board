@@ -1,7 +1,7 @@
 // Service worker: makes the site installable and open fast.
-// The page itself is fetched network-first so updates on GitHub show up right away;
+// Files are fetched network-first (revalidated every time) so updates on GitHub show up right away;
 // the cached copy is used only when offline. Data requests (Google) are never cached.
-const CACHE = "mm-board-v2";
+const CACHE = "mm-board-v3";
 const SHELL = ["./", "./index.html", "./app.css", "./app.js", "./logo.webp", "./ometz.webp", "./hoss.webp", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
@@ -19,8 +19,10 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    // "no-cache" = always revalidate with GitHub, so a new upload shows up on the next load
+    fetch(e.request.url, { cache: "no-cache", credentials: "same-origin" })
       .then((res) => {
+        if (!res.ok) return caches.match(e.request).then((r) => r || res);
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));
         return res;
